@@ -1,37 +1,94 @@
 # react-native-unilitix
 
-Official React Native SDK for Unilitix — African-first mobile UX analytics
+Official React Native SDK for [Unilitix](https://unilitix.com) —
+African-first mobile UX analytics.
 
-## Installation
+[![npm version](https://img.shields.io/npm/v/react-native-unilitix.svg)](https://www.npmjs.com/package/react-native-unilitix)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
+## Install
 
-```sh
+```bash
 npm install react-native-unilitix
+# or
+yarn add react-native-unilitix
 ```
 
+## Quick start
 
-## Usage
+```ts
+import Unilitix from 'react-native-unilitix';
 
-
-```js
-import { multiply } from 'react-native-unilitix';
-
-// ...
-
-const result = multiply(3, 7);
+// In App.tsx — initialize once
+await Unilitix.init('YOUR_API_KEY');
 ```
 
+Get your API key at [app.unilitix.com](https://app.unilitix.com)
+→ Settings → Apps → Create App.
 
-## Contributing
+## Track events
 
-- [Development workflow](CONTRIBUTING.md#development-workflow)
-- [Sending a pull request](CONTRIBUTING.md#sending-a-pull-request)
-- [Code of conduct](CODE_OF_CONDUCT.md)
+```ts
+Unilitix.track('purchase_completed', {
+  amount: 5000,
+  currency: 'NGN',
+});
+```
 
-## License
+## Identify users
 
-MIT
+```ts
+// After login
+Unilitix.identify('user_123', {
+  name: 'Tosin',
+  plan: 'pro',
+  country: 'Nigeria',
+});
 
----
+// After logout
+Unilitix.reset();
+```
 
-Made with [create-react-native-library](https://github.com/callstack/react-native-builder-bob)
+## Screen tracking
+
+```ts
+// With React Navigation
+<NavigationContainer
+  onStateChange={(state) => {
+    const route = state?.routes[state.index];
+    if (route) Unilitix.screen(route.name);
+  }}
+>
+```
+
+## Configuration
+
+```ts
+await Unilitix.init('YOUR_API_KEY', {
+  debug: true,
+  autoTrackScreens: true,
+  autoTrackTaps: true,
+  autoTrackCrashes: true,
+  autoTrackRageTaps: true,
+  flushIntervalSeconds: 30,
+  sessionTimeoutSeconds: 1800,
+  maskInputs: true,
+  sampleRate: 1.0,
+});
+```
+
+## Privacy
+
+```ts
+Unilitix.optOut();  // stop tracking
+Unilitix.optIn();   // resume tracking
+Unilitix.reset();   // clear user identity
+```
+
+## Requirements
+
+| Platform     | Version      |
+|--------------|--------------|
+| Android      | API 21+      |
+| iOS          | Coming soon  |
+| React Native | 0.71+        |
