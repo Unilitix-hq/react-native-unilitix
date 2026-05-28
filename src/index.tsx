@@ -18,6 +18,8 @@ const UnilitixNative = NativeModules.Unilitix
       }
     );
 
+let _screenEventReceived = false;
+
 export interface UnilitixConfig {
   /** API endpoint. Default: https://api.unilitix.com */
   endpoint?: string;
@@ -73,6 +75,19 @@ const Unilitix = {
       sessionTimeoutSeconds: config?.sessionTimeoutSeconds ?? 1800,
       maskInputs: config?.maskInputs ?? true,
       sampleRate: config?.sampleRate ?? 1.0,
+    }).then(() => {
+      if (config?.debug) {
+        console.log('[Unilitix] ✅ SDK initialized');
+        console.log('[Unilitix] ✅ Session started');
+        setTimeout(() => {
+          if (!_screenEventReceived) {
+            console.warn(
+              '[Unilitix] ⚠️ No screen events detected. Did you wire ' +
+                'Unilitix.screen() to NavigationContainer.onStateChange?'
+            );
+          }
+        }, 5000);
+      }
     });
   },
 
@@ -123,6 +138,7 @@ const Unilitix = {
    * ```
    */
   screen(screenName: string): Promise<void> {
+    _screenEventReceived = true;
     return UnilitixNative.screen({ screenName });
   },
 

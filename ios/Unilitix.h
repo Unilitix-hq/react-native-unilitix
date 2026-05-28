@@ -1,5 +1,5 @@
-#import <UnilitixSpec/UnilitixSpec.h>
+#import <React/RCTBridgeModule.h>
 
-@interface Unilitix : NSObject <NativeUnilitixSpec>
+@interface Unilitix : NSObject <RCTBridgeModule>
 
 @end

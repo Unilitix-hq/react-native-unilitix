@@ -1,6 +1,6 @@
 {
   "name": "react-native-unilitix",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Official React Native SDK for Unilitix — African-first mobile UX analytics",
   "main": "lib/commonjs/index",
   "module": "lib/module/index",

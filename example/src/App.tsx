@@ -1,12 +1,12 @@
-import { Text, View, StyleSheet } from 'react-native';
-import { multiply } from 'react-native-unilitix';
+import { View, Text, StyleSheet } from 'react-native';
+import Unilitix from 'react-native-unilitix';
 
-const result = multiply(3, 7);
+Unilitix.init('YOUR_API_KEY', { debug: true });
 
 export default function App() {
   return (
     <View style={styles.container}>
-      <Text>Result: {result}</Text>
+      <Text>Unilitix React Native SDK</Text>
     </View>
   );
 }

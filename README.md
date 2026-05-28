@@ -85,6 +85,19 @@ Unilitix.optIn();   // resume tracking
 Unilitix.reset();   // clear user identity
 ```
 
+## Session control
+
+```ts
+// Manually start a new session
+await Unilitix.startSession();
+
+// End the current session
+await Unilitix.endSession();
+
+// Force upload all queued events immediately
+await Unilitix.flush();
+```
+
 ## Requirements
 
 | Platform     | Version      |
