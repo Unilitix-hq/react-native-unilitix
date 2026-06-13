@@ -23,7 +23,7 @@ class UnilitixModule(
       val app = reactContext.applicationContext as Application
 
       Unilitix.init(app, apiKey) {
-        options.getString("endpoint")
+        options.getString("apiUrl")
           ?.let { apiUrl = it }
         if (options.hasKey("debug"))
           debugLogging = options.getBoolean("debug")
@@ -42,14 +42,47 @@ class UnilitixModule(
         if (options.hasKey("flushIntervalSeconds"))
           flushIntervalSeconds =
             options.getInt("flushIntervalSeconds")
+        if (options.hasKey("flushBatchSize"))
+          flushBatchSize =
+            options.getInt("flushBatchSize")
+        if (options.hasKey("maxOfflineEvents"))
+          maxOfflineEvents =
+            options.getInt("maxOfflineEvents")
         if (options.hasKey("sessionTimeoutSeconds"))
           sessionTimeoutSeconds =
             options.getInt("sessionTimeoutSeconds")
         if (options.hasKey("maskInputs"))
           maskInputs = options.getBoolean("maskInputs")
+        if (options.hasKey("captureSnapshots"))
+          captureSnapshots =
+            options.getBoolean("captureSnapshots")
+        if (options.hasKey("captureScreenshots"))
+          captureScreenshots =
+            options.getBoolean("captureScreenshots")
+        if (options.hasKey("uploadScreenshotsOnWifiOnly"))
+          uploadScreenshotsOnWifiOnly =
+            options.getBoolean("uploadScreenshotsOnWifiOnly")
+        if (options.hasKey("snapshotIntervalMs"))
+          snapshotIntervalMs =
+            options.getInt("snapshotIntervalMs").toLong()
+        if (options.hasKey("maxSnapshotsPerSession"))
+          maxSnapshotsPerSession =
+            options.getInt("maxSnapshotsPerSession")
+        if (options.hasKey("screenshotIntervalMs"))
+          screenshotIntervalMs =
+            options.getInt("screenshotIntervalMs").toLong()
+        if (options.hasKey("screenshotQuality"))
+          screenshotQuality =
+            options.getInt("screenshotQuality")
+        if (options.hasKey("screenshotMaxWidth"))
+          screenshotMaxWidth =
+            options.getInt("screenshotMaxWidth")
+        if (options.hasKey("maxScreenshotsPerSession"))
+          maxScreenshotsPerSession =
+            options.getInt("maxScreenshotsPerSession")
         if (options.hasKey("sampleRate"))
           sampleRate =
-            options.getDouble("sampleRate").toFloat()
+            options.getDouble("sampleRate")
       }
       promise.resolve(null)
     } catch (e: Exception) {
