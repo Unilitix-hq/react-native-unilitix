@@ -16,11 +16,17 @@ yarn add react-native-unilitix@^1.0.4
 
 ## Quick start
 
-```ts
-import Unilitix from 'react-native-unilitix';
+```tsx
+import Unilitix, { setupUnilitixCrashHandler } from 'react-native-unilitix';
+import { useEffect } from 'react';
 
-// In App.tsx — initialize once
-await Unilitix.init('YOUR_API_KEY');
+export default function App() {
+  useEffect(() => {
+    Unilitix.init('YOUR_API_KEY', { debug: true }).then(() => {
+      setupUnilitixCrashHandler();
+    });
+  }, []);
+}
 ```
 
 Get your API key at [app.unilitix.com](https://app.unilitix.com)
@@ -87,7 +93,7 @@ In debug mode, after `init()` resolves you will see in Metro console:
 Unilitix.screen() to NavigationContainer.onStateChange?
 ```
 
-The `⚠️` warning only appears if `Unilitix.screen()` is never called within 5 seconds of init. Silent in production builds.
+The `⚠️` warning only appears if `Unilitix.screen()` or `createUnilitixNavigationListener` is never called within 5 seconds of init. Wire the navigation listener to suppress it. Silent in production builds.
 
 ## Configuration
 
@@ -139,5 +145,5 @@ await Unilitix.flush();
 | Platform     | Version      |
 |--------------|--------------|
 | Android      | API 21+      |
-| iOS          | Coming soon  |
+| iOS          | Gracefully no-ops — coming soon |
 | React Native | 0.71+        |
