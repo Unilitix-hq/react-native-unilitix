@@ -1,6 +1,6 @@
 {
   "name": "react-native-unilitix",
-  "version": "1.0.1",
+  "version": "1.0.4",
   "description": "Official React Native SDK for Unilitix — African-first mobile UX analytics",
   "main": "lib/commonjs/index",
   "module": "lib/module/index",
@@ -20,7 +20,6 @@
     "./package.json": "./package.json"
   },
   "files": [
-    "src",
     "lib",
     "android",
     "ios",
@@ -126,14 +125,6 @@
       ]
     ]
   },
-  "codegenConfig": {
-    "name": "UnilitixSpec",
-    "type": "modules",
-    "jsSrcsDir": "src",
-    "android": {
-      "javaPackageName": "com.unilitix"
-    }
-  },
   "prettier": {
     "quoteProps": "consistent",
     "singleQuote": true,
@@ -142,7 +133,13 @@
     "useTabs": false
   },
   "jest": {
-    "preset": "@react-native/jest-preset",
+    "testEnvironment": "node",
+    "transform": {
+      "^.+\\.[jt]sx?$": "babel-jest"
+    },
+    "moduleNameMapper": {
+      "^react-native$": "<rootDir>/__mocks__/react-native.js"
+    },
     "modulePathIgnorePatterns": [
       "<rootDir>/example/node_modules",
       "<rootDir>/lib/"
@@ -173,7 +170,7 @@
     }
   },
   "create-react-native-library": {
-    "type": "turbo-module",
+    "type": "module",
     "languages": "kotlin-objc",
     "tools": [
       "eslint",

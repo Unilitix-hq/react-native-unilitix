@@ -1,7 +1,7 @@
 buildscript {
   ext.Unilitix = [
     kotlinVersion: "2.0.21",
-    minSdkVersion: 24,
+    minSdkVersion: 21,
     compileSdkVersion: 36,
     targetSdkVersion: 36
   ]
@@ -17,7 +17,6 @@ buildscript {
   repositories {
     google()
     mavenCentral()
-    maven { url 'https://jitpack.io' }
   }
 
   dependencies {
@@ -32,7 +31,6 @@ allprojects {
   repositories {
     google()
     mavenCentral()
-    maven { url 'https://jitpack.io' }
   }
 }
 
@@ -73,5 +71,5 @@ android {
 
 dependencies {
   implementation "com.facebook.react:react-android"
-  implementation 'com.github.Unilitix-hq:unilitix-android:1.4.1'
+  implementation 'com.unilitix:unilitix-android:1.4.1'
 }

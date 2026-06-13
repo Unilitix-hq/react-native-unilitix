@@ -1,0 +1,11 @@
+# Source files — compiled output in lib/ ships instead
+src/
+
+# Example app
+example/
+
+# CI and repo hygiene
+.github/
+CONTRIBUTING.md
+lefthook.yml
+commitlint.config.js

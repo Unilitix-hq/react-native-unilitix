@@ -26,5 +26,6 @@
     "strict": true,
     "target": "ESNext",
     "verbatimModuleSyntax": true
-  }
+  },
+  "exclude": ["node_modules", "**/__tests__/**", "**/*.test.*", "**/__mocks__/**"]
 }
