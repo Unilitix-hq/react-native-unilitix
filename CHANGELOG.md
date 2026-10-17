@@ -19,6 +19,7 @@ Requires `com.unilitix:unilitix-android` 1.4.2 (pulled in automatically).
   friends; they are logged in development.
 - The navigation listener catches its own errors.
 - On iOS the warning is printed once, not on every call.
+- The Android module failed to compile on React Native 0.79+ (`ReadableMap.toHashMap()` now returns nullable values); `track` properties and `identify` traits drop `null` values instead.
 
 ### Added
 - `Unilitix.captureException(error, { fatal })`, `Unilitix.addBreadcrumb(message, category)`.
