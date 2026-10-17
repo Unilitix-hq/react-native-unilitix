@@ -1,4 +1,4 @@
-// VENDORED from UnilitixCore 0.1.1 (Engine.swift) by scripts/sync-ios-core.sh.
+// VENDORED from UnilitixCore 0.2.0 (Engine.swift) by scripts/sync-ios-core.sh.
 // Do not edit here; change UnilitixCore and re-run the script.
 
 import Foundation
@@ -20,6 +20,7 @@ final class Engine {
     private var session: SessionInfo?
     private var backgroundedAt: Date?
     private var screen = ""
+    private let rageTaps = RageTapDetector()
     private var seq = 0
 
     // Upload state (contract: one request per cycle, backoff window, auth latch).
@@ -132,10 +133,36 @@ final class Engine {
         emit(e)
     }
 
-    func screenView(_ name: String) {
+    /// `automatic` views (from view controllers) skip a repeat of the current
+    /// screen, e.g. a child appearing again after a modal is dismissed.
+    func screenView(_ name: String, automatic: Bool = false) {
+        if automatic && name == screen { return }
         screen = name
         breadcrumbs.add(type: "NAVIGATE", screen: name)
         emit(IngestEvent(type: "NAVIGATE", screen: name, at: now()))
+    }
+
+    /// A tap at (x, y) in points; becomes a RAGE_TAP when it completes one.
+    func recordTap(x: Double, y: Double, view: String) {
+        guard consent != .denied, config.autoTrackTaps else { return }
+        let t = now()
+        if config.autoTrackRageTaps,
+           let hit = rageTaps.record(x: x, y: y, screen: screen, at: t.timeIntervalSince1970) {
+            var e = IngestEvent(type: "RAGE_TAP", screen: screen, at: t)
+            e.x = hit.x
+            e.y = hit.y
+            e.properties = ["taps": .int(Int64(hit.taps))]
+            if !view.isEmpty { e.properties?["view"] = .string(view) }
+            breadcrumbs.add(type: "RAGE_TAP", screen: screen, message: view.isEmpty ? nil : view, at: t)
+            emit(e)
+            return
+        }
+        var e = IngestEvent(type: "TAP", screen: screen, at: t)
+        e.x = x
+        e.y = y
+        if !view.isEmpty { e.properties = ["view": .string(view)] }
+        breadcrumbs.add(type: "TAP", screen: screen, message: view.isEmpty ? nil : view, at: t)
+        emit(e)
     }
 
     func addBreadcrumb(_ message: String, category: String?) {
@@ -320,6 +347,9 @@ final class Engine {
             appVersion: device.appVersion,
             buildNumber: device.buildNumber,
             packageName: device.packageName,
+            screenWidth: device.screenWidth,
+            screenHeight: device.screenHeight,
+            screenDensity: device.screenDensity,
             locale: device.locale,
             timezone: device.timezone,
             startedAt: ISO8601.string(from: s.startedAt),

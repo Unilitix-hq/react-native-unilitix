@@ -11,7 +11,7 @@ public final class UnilitixBridge: NSObject {
 
     /// This package's version; must match package.json (checked by
     /// src/__tests__/ios.test.tsx).
-    static let packageVersion = "1.2.0"
+    static let packageVersion = "1.3.0"
 
     private static let lock = NSLock()
     private static var engine: Engine?
@@ -29,6 +29,12 @@ public final class UnilitixBridge: NSObject {
         if let v = options["apiUrl"] as? String, !v.isEmpty { config.apiUrl = v }
         if let v = options["debug"] as? Bool { config.debug = v }
         if let v = options["autoTrackCrashes"] as? Bool { config.autoTrackCrashes = v }
+        if let v = options["autoTrackTaps"] as? Bool { config.autoTrackTaps = v }
+        if let v = options["autoTrackRageTaps"] as? Bool { config.autoTrackRageTaps = v }
+        // Screens come from JS (the navigation listener or Unilitix.screen);
+        // React Native has one root view controller, so native screen
+        // tracking would only record noise.
+        config.autoTrackScreens = false
         if let v = options["flushIntervalSeconds"] as? Int { config.flushIntervalSeconds = v }
         if let v = options["flushBatchSize"] as? Int { config.flushBatchSize = v }
         if let v = options["maxOfflineEvents"] as? Int { config.maxOfflineEvents = v }
@@ -53,6 +59,9 @@ public final class UnilitixBridge: NSObject {
             CrashReporter.install(e)
         }
         e.queue.async { e.start() }
+        if config.autoTrackTaps {
+            DispatchQueue.main.async { AutoCapture.install(e, screens: false, taps: true) }
+        }
 
         #if canImport(UIKit)
         let nc = NotificationCenter.default

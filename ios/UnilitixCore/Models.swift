@@ -1,4 +1,4 @@
-// VENDORED from UnilitixCore 0.1.1 (Models.swift) by scripts/sync-ios-core.sh.
+// VENDORED from UnilitixCore 0.2.0 (Models.swift) by scripts/sync-ios-core.sh.
 // Do not edit here; change UnilitixCore and re-run the script.
 
 import Foundation
@@ -120,6 +120,9 @@ struct IngestSessionRequest: Encodable {
     var appVersion: String
     var buildNumber: String
     var packageName: String
+    var screenWidth: Int?
+    var screenHeight: Int?
+    var screenDensity: Double?
     var locale: String
     var timezone: String
     var startedAt: String

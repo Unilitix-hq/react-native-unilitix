@@ -1,4 +1,4 @@
-// VENDORED from UnilitixCore 0.1.1 (Transport.swift) by scripts/sync-ios-core.sh.
+// VENDORED from UnilitixCore 0.2.0 (Transport.swift) by scripts/sync-ios-core.sh.
 // Do not edit here; change UnilitixCore and re-run the script.
 
 import Foundation
@@ -57,7 +57,7 @@ final class URLSessionTransport: Transport {
 
 public enum UnilitixVersion {
     /// This package's version.
-    public static let current = "0.1.1"
+    public static let current = "0.2.0"
     /// What the SDK reports to the API (session `sdkVersion`, User-Agent).
     /// Wrappers that embed UnilitixCore, such as React Native, set their own.
     static var reported = current
@@ -73,6 +73,10 @@ struct DeviceInfo {
     var appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
     var buildNumber = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""
     var packageName = Bundle.main.bundleIdentifier ?? ""
+    /// Screen size in points (the unit tap coordinates use) and its scale.
+    var screenWidth: Int?
+    var screenHeight: Int?
+    var screenDensity: Double?
     var locale = Locale.current.identifier
     var timezone = TimeZone.current.identifier
 
@@ -83,6 +87,10 @@ struct DeviceInfo {
         info.os = device.systemName
         info.osVersion = device.systemVersion
         info.deviceType = device.userInterfaceIdiom == .pad ? "tablet" : "phone"
+        let screen = UIScreen.main
+        info.screenWidth = Int(screen.bounds.width)
+        info.screenHeight = Int(screen.bounds.height)
+        info.screenDensity = Double(screen.scale)
         #elseif os(macOS)
         info.os = "macOS"
         info.deviceType = "desktop"
