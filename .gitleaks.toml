@@ -17,6 +17,7 @@ keywords = ["udk_live_"]
 [allowlist]
 paths = [
   '''\.gitleaks\.toml$''',
+  '''^\.yarn/releases/''',     # vendored Yarn binary; its minified source trips generic-api-key
 ]
 regexes = [
   '''ul_live_\*{4}''',       # masked placeholder used in docs/onboarding UI

@@ -8,6 +8,20 @@ import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.ReadableMap
 import io.unilitix.sdk.Unilitix
 
+/**
+ * `ReadableMap.toHashMap()` returns `HashMap<String, Any?>` since React Native
+ * 0.79; the Android SDK takes `Map<String, Any>`. JS `null`/`undefined`
+ * properties carry no information on the wire, so they are dropped here.
+ */
+internal fun ReadableMap?.toNonNullMap(): Map<String, Any> {
+  val source = this?.toHashMap() ?: return emptyMap()
+  val out = LinkedHashMap<String, Any>(source.size)
+  for ((key, value) in source) {
+    if (value != null) out[key] = value
+  }
+  return out
+}
+
 class UnilitixModule(
   private val reactContext: ReactApplicationContext
 ) : ReactContextBaseJavaModule(reactContext) {
@@ -100,8 +114,7 @@ class UnilitixModule(
       val event = options.getString("event")
         ?: return promise.reject("MISSING_EVENT",
             "event is required")
-      val props = options.getMap("properties")
-        ?.toHashMap() ?: emptyMap<String, Any>()
+      val props = options.getMap("properties").toNonNullMap()
       Unilitix.trackEvent(event, props)
       promise.resolve(null)
     } catch (e: Exception) {
@@ -115,8 +128,7 @@ class UnilitixModule(
       val userId = options.getString("userId")
         ?: return promise.reject("MISSING_USER_ID",
             "userId is required")
-      val traits = options.getMap("traits")
-        ?.toHashMap() ?: emptyMap<String, Any>()
+      val traits = options.getMap("traits").toNonNullMap()
       Unilitix.identify(userId, traits)
       promise.resolve(null)
     } catch (e: Exception) {
