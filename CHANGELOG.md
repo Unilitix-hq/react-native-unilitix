@@ -1,5 +1,39 @@
 # Changelog
 
+## [1.1.0] - 2026-10-17
+
+Requires `com.unilitix:unilitix-android` 1.4.2 (pulled in automatically).
+
+### Fixed
+- **JS crashes reach the crash dashboard.** They were sent as a custom event
+  named `_crash`. Uncaught JS errors are now `CRASH` reports (with the last
+  50 breadcrumbs, a stable fingerprint and `fatal` as React Native reports
+  it); unhandled promise rejections are non-fatal `EXCEPTION`s.
+- A fatal JS error is persisted on-device (bounded to 2 s) before the
+  previous global handler runs, so the report survives the process ending.
+- `init()` is memoised; calling it twice no longer re-initialises the native
+  side. A failed `init()` can be retried.
+- `track`/`screen`/`identify`/… called before `init()` resolves are queued
+  and replayed in order instead of racing the bridge (or throwing).
+- Native rejections no longer propagate into the app from `track()` and
+  friends; they are logged in development.
+- The navigation listener catches its own errors.
+- On iOS the warning is printed once, not on every call.
+
+### Added
+- `Unilitix.captureException(error, { fatal })`, `Unilitix.addBreadcrumb(message, category)`.
+- `Unilitix.isAvailable`, `Unilitix.isInitialized`, `Unilitix.consent`,
+  `Unilitix.setConsent('granted' | 'pending' | 'denied')`.
+- Config: `consent`, `maskAllText`, `maskImages`, `replaySampleRate`
+  (`sampleRate` kept as an alias), `installJsCrashHandler`.
+- `setupUnilitixCrashHandler()` is installed by `init()` and is idempotent.
+
+### Changed
+- Every bridge method takes one options object and a promise (`startSession`,
+  `endSession`, `flush`, `optOut`, `optIn`, `reset` included), on Android and
+  in the iOS stubs, so the iOS implementation can land without changing call
+  shapes.
+
 ## [1.0.4] - 2026-06-13
 ### Fixed
 - iOS method stubs now reject with `IOS_NOT_SUPPORTED` instead of silently returning `undefined`

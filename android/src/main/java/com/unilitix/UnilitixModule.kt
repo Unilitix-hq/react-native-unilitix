@@ -51,8 +51,12 @@ class UnilitixModule(
         if (options.hasKey("sessionTimeoutSeconds"))
           sessionTimeoutSeconds =
             options.getInt("sessionTimeoutSeconds")
-        if (options.hasKey("maskInputs"))
+        if (options.hasKey("maskInputs")) {
           maskInputs = options.getBoolean("maskInputs")
+          maskInputsInScreenshots = options.getBoolean("maskInputs")
+        }
+        // maskAllText / maskImages are accepted from JS for parity with the
+        // Flutter SDK and applied once unilitix-android exposes them.
         if (options.hasKey("captureSnapshots"))
           captureSnapshots =
             options.getBoolean("captureSnapshots")
@@ -133,8 +137,42 @@ class UnilitixModule(
     }
   }
 
+  /**
+   * Reports an error the JS side caught (uncaught JS error, unhandled
+   * promise rejection, or `Unilitix.captureException`). `fatal` reports a
+   * CRASH that the library persists before this method resolves, so the JS
+   * handler can safely chain to React Native's default (process-ending)
+   * handler afterwards.
+   */
   @ReactMethod
-  fun startSession(promise: Promise) {
+  fun recordException(options: ReadableMap, promise: Promise) {
+    try {
+      val type = options.getString("type") ?: "Error"
+      val message = options.getString("message") ?: ""
+      val stack = options.getString("stack") ?: ""
+      val fatal = options.hasKey("fatal") && options.getBoolean("fatal")
+      Unilitix.recordException(type, message, stack, fatal, "js")
+      promise.resolve(null)
+    } catch (e: Exception) {
+      promise.reject("EXCEPTION_ERROR", e.message, e)
+    }
+  }
+
+  @ReactMethod
+  fun addBreadcrumb(options: ReadableMap, promise: Promise) {
+    try {
+      val message = options.getString("message")
+        ?: return promise.reject("MISSING_MESSAGE", "message is required")
+      val category = options.getString("category") ?: "custom"
+      Unilitix.addBreadcrumb(message, category)
+      promise.resolve(null)
+    } catch (e: Exception) {
+      promise.reject("BREADCRUMB_ERROR", e.message, e)
+    }
+  }
+
+  @ReactMethod
+  fun startSession(options: ReadableMap?, promise: Promise) {
     try { Unilitix.startSession(); promise.resolve(null) }
     catch (e: Exception) {
       promise.reject("SESSION_ERROR", e.message, e)
@@ -142,7 +180,7 @@ class UnilitixModule(
   }
 
   @ReactMethod
-  fun endSession(promise: Promise) {
+  fun endSession(options: ReadableMap?, promise: Promise) {
     try { Unilitix.endSession(); promise.resolve(null) }
     catch (e: Exception) {
       promise.reject("SESSION_ERROR", e.message, e)
@@ -150,7 +188,7 @@ class UnilitixModule(
   }
 
   @ReactMethod
-  fun flush(promise: Promise) {
+  fun flush(options: ReadableMap?, promise: Promise) {
     try { Unilitix.flush(); promise.resolve(null) }
     catch (e: Exception) {
       promise.reject("FLUSH_ERROR", e.message, e)
@@ -158,7 +196,7 @@ class UnilitixModule(
   }
 
   @ReactMethod
-  fun optOut(promise: Promise) {
+  fun optOut(options: ReadableMap?, promise: Promise) {
     try { Unilitix.optOut(); promise.resolve(null) }
     catch (e: Exception) {
       promise.reject("OPT_ERROR", e.message, e)
@@ -166,7 +204,7 @@ class UnilitixModule(
   }
 
   @ReactMethod
-  fun optIn(promise: Promise) {
+  fun optIn(options: ReadableMap?, promise: Promise) {
     try { Unilitix.optIn(); promise.resolve(null) }
     catch (e: Exception) {
       promise.reject("OPT_ERROR", e.message, e)
@@ -174,7 +212,7 @@ class UnilitixModule(
   }
 
   @ReactMethod
-  fun reset(promise: Promise) {
+  fun reset(options: ReadableMap?, promise: Promise) {
     try { Unilitix.reset(); promise.resolve(null) }
     catch (e: Exception) {
       promise.reject("RESET_ERROR", e.message, e)

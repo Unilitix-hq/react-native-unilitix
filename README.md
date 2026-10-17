@@ -71,16 +71,31 @@ import { createUnilitixNavigationListener } from 'react-native-unilitix';
 
 ## Crash tracking
 
-Native crashes are captured automatically. For JS exception tracking, add:
+Native (Kotlin/Java) crashes and JS errors are both captured once `init()`
+has run — no extra wiring:
+
+- An uncaught JS error is reported as a `CRASH` with the last 50
+  breadcrumbs (taps, screens, custom events, your own `addBreadcrumb`).
+  The report is persisted on-device (bounded to 2 s) before React Native's
+  own handler runs, so a fatal error still reaches the dashboard.
+- An unhandled promise rejection is reported as a non-fatal `EXCEPTION`
+  (Hermes; on JSC use `captureException` in your `.catch`).
+- Every report carries a stable fingerprint so one bug is counted once
+  across devices.
 
 ```ts
-import { setupUnilitixCrashHandler } from 'react-native-unilitix';
+try {
+  await pay(card);
+} catch (e) {
+  Unilitix.captureException(e); // non-fatal EXCEPTION
+}
 
-// Call once after init()
-Unilitix.init('YOUR_API_KEY').then(() => {
-  setupUnilitixCrashHandler();
-});
+Unilitix.addBreadcrumb('checkout started', 'flow');
 ```
+
+Pass `installJsCrashHandler: false` to `init()` and call
+`setupUnilitixCrashHandler()` yourself if you need to order it with another
+error-reporting SDK; handlers installed before Unilitix still run.
 
 ## Verify your integration
 
@@ -106,26 +121,39 @@ await Unilitix.init('YOUR_API_KEY', {
   autoTrackCrashes: true,
   autoTrackRageTaps: true,
   // Privacy
+  consent: 'granted',           // 'denied' collects nothing; see below
   maskInputs: true,
+  maskAllText: true,            // applied once unilitix-android exposes it
+  maskImages: false,
   captureSnapshots: true,       // session replay DOM snapshots
   captureScreenshots: true,     // session replay screenshots
   uploadScreenshotsOnWifiOnly: true,
+  replaySampleRate: 1.0,        // fraction of sessions with replay
   // Performance
   flushIntervalSeconds: 30,
   flushBatchSize: 100,
   maxOfflineEvents: 1000,
   sessionTimeoutSeconds: 1800,
-  sampleRate: 1.0,
 });
 ```
+
+`init()` is memoised and calls made before it resolves (`track`, `screen`,
+`identify`, …) are queued and replayed in order, so you can track from the
+first render. `Unilitix.isAvailable` is `false` on iOS and in Expo Go, where
+every call is a no-op.
 
 ## Privacy
 
 ```ts
-Unilitix.optOut();  // stop tracking
-Unilitix.optIn();   // resume tracking
-Unilitix.reset();   // clear user identity
+Unilitix.setConsent('denied');   // stop tracking (same as optOut)
+Unilitix.setConsent('granted');  // resume tracking (same as optIn)
+Unilitix.reset();                // clear user identity
 ```
+
+`consent: 'pending'` is accepted for parity with the Flutter SDK, but on
+React Native it currently behaves like `'denied'` until
+`setConsent('granted')`: the Android library does not yet hold data while a
+decision is pending.
 
 ## Session control
 
