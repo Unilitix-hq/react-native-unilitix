@@ -14,10 +14,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # No registry-url: with it, setup-node writes an .npmrc holding a
+      # placeholder auth token, and npm sends that token instead of
+      # exchanging the OIDC identity (E404 on PUT).
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-          registry-url: 'https://registry.npmjs.org'
+
+      - name: npm with trusted publishing support (>= 11.5.1)
+        run: |
+          npm install -g npm@^11.5.1
+          npm --version
 
       - name: Tag matches package.json version
         run: |
