@@ -1,5 +1,6 @@
 import { NativeModules, Platform } from 'react-native';
 import type { components as IngestComponents } from './generated/ingest';
+import { SdkContract } from './generated/sdkContract';
 
 /**
  * Wire types of the Unilitix ingest API, generated from the server's
@@ -163,7 +164,7 @@ let _crashHandlerInstalled = false;
  * side is ready, so an app can track from its first render without racing
  * the bridge. Bounded so a never-initialised SDK cannot grow without limit.
  */
-const PRE_INIT_LIMIT = 200;
+const PRE_INIT_LIMIT = SdkContract.preInitBufferSize;
 const _preInit: Array<() => Promise<void>> = [];
 
 function warnIos() {
@@ -491,7 +492,7 @@ function getActiveRoute(state: any): any {
 }
 
 /** Upper bound on how long a fatal error waits for its report to persist. */
-const FATAL_FLUSH_BUDGET_MS = 2000;
+const FATAL_FLUSH_BUDGET_MS = SdkContract.fatalFlushBudgetMs;
 
 /**
  * Installs the global JS error handler and unhandled-promise-rejection

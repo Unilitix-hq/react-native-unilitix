@@ -1,6 +1,6 @@
 {
   "name": "react-native-unilitix",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Official React Native SDK for Unilitix — African-first mobile UX analytics",
   "main": "lib/commonjs/index",
   "module": "lib/module/index",
@@ -47,7 +47,8 @@
     "release": "release-it --only-version",
     "web": "vite",
     "build:web": "vite build",
-    "api:types": "openapi-typescript ../tazama/api/openapi.sdk.json -o src/generated/ingest.ts"
+    "api:types": "openapi-typescript ../tazama/api/openapi.sdk.json -o src/generated/ingest.ts",
+    "api:contract": "cp ../tazama/api/sdk/ts/sdkContract.ts src/generated/sdkContract.ts"
   },
   "keywords": [
     "react-native",
