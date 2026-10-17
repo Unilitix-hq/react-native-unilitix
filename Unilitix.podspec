@@ -14,6 +14,7 @@ Pod::Spec.new do |s|
   s.source       = { :git => "https://github.com/Unilitix-hq/react-native-unilitix.git", :tag => "#{s.version}" }
 
   s.source_files = "ios/**/*.{h,m,mm,swift,cpp}"
+  s.swift_version = "5.9"
   s.private_header_files = "ios/**/*.h"
 
   install_modules_dependencies(s)

@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.2.0] - 2026-10-18
+
+### Added
+- **iOS support.** Every call now works on iOS: sessions (a new one after
+  30 minutes in the background), `track`, `screen`, `identify`, handled and
+  uncaught JS errors with breadcrumbs and fingerprints, uncaught native
+  (Objective-C) exceptions, consent, `flush`, `reset` and session control.
+  Data is queued on the device and survives offline periods and crashes.
+  Powered by UnilitixCore 0.1, vendored into the pod (no extra dependency).
+- On iOS, `consent: 'pending'` holds events on the device until
+  `setConsent('granted')` uploads them (Android still treats pending as
+  denied until the Android library adds a pending state).
+
+### Not yet on iOS
+- Automatic tap and rage-tap capture, and session replay (UnilitixCore 0.2).
+
 ## [1.1.1] - 2026-10-18
 
 Requires `com.unilitix:unilitix-android` 1.5.0 (pulled in automatically).
