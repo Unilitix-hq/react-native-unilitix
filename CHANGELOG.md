@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.1.1] - 2026-10-18
+
+Requires `com.unilitix:unilitix-android` 1.5.0 (pulled in automatically).
+
+### Fixed
+- **One JS bug is one issue.** Crash fingerprints no longer include the
+  error message when it ends in parentheses (Hermes' `(evaluating 'a.b')`),
+  so a bug no longer splits into many dashboard issues. Fixed in the Android
+  library.
+- **Rage taps are detected on high-density screens.** The radius is now
+  100 dp; it was 100 physical pixels (~33 dp on a 3x phone).
+
+### Added
+- `src/generated/sdkContract.ts`, generated from the shared SDK contract
+  (`yarn api:contract` copies it from the api repo), and a conformance test
+  for the config defaults and limits. Known gaps are listed in the contract.
+
 ## [1.1.0] - 2026-10-17
 
 Requires `com.unilitix:unilitix-android` 1.4.2 (pulled in automatically).
