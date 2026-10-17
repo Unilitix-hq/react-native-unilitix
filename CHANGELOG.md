@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.3.0] - 2026-10-18
+
+### Added
+- **iOS taps and rage taps.** Taps are recorded with their position and the
+  tapped view's class and accessibility identifier (never its text); three
+  quick taps in one spot become a rage tap. Keyboard taps are ignored.
+  `autoTrackTaps` / `autoTrackRageTaps` control it, as on Android.
+- iOS sessions carry the screen size, so tap heatmaps line up.
+
+Screens on iOS still come from the navigation listener or `Unilitix.screen`.
+Embeds UnilitixCore 0.2.0.
+
 ## [1.2.0] - 2026-10-18
 
 ### Added

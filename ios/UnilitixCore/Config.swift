@@ -1,4 +1,4 @@
-// VENDORED from UnilitixCore 0.1.1 (Config.swift) by scripts/sync-ios-core.sh.
+// VENDORED from UnilitixCore 0.2.0 (Config.swift) by scripts/sync-ios-core.sh.
 // Do not edit here; change UnilitixCore and re-run the script.
 
 import Foundation
@@ -6,14 +6,21 @@ import Foundation
 /// SDK configuration. Every default is the shared SDK contract's
 /// (`SdkContract.defaults`); `SdkContractTests` fails if one drifts.
 ///
-/// UnilitixCore 0.1 covers events, sessions, errors and crashes. Auto-capture
-/// (screens, taps, rage taps) and replay arrive in 0.2; their options are
-/// listed as iOS divergences in the contract until then.
+/// Session replay arrives in UnilitixCore 0.3; its options are listed as iOS
+/// divergences in the contract until then.
 public struct UnilitixConfig {
     /// Ingest API base URL.
     public var apiUrl: String = "https://api.unilitix.com"
     /// Verbose logging to the console.
     public var debug: Bool = false
+    /// Record a screen view when a view controller appears (UIKit and
+    /// SwiftUI-hosted screens). Turn off if you call `Unilitix.screen` yourself.
+    public var autoTrackScreens: Bool = true
+    /// Record taps (position in points and the tapped view's class and
+    /// accessibility identifier, never its text). Keyboard taps are ignored.
+    public var autoTrackTaps: Bool = true
+    /// Record rage taps: three or more taps close together within a second.
+    public var autoTrackRageTaps: Bool = true
     /// Report uncaught Objective-C exceptions as CRASH events.
     public var autoTrackCrashes: Bool = true
     /// Upload queued events at least this often, in seconds.
