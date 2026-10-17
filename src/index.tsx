@@ -21,12 +21,10 @@ const LINKING_ERROR =
   '- You rebuilt the app after installing the package\n' +
   '- You are not using Expo Go\n';
 
-const IS_IOS = Platform.OS === 'ios';
+// Read at call time (tests switch platforms).
+const isIOS = () => Platform.OS === 'ios';
 // `__DEV__` is defined by React Native, not by every test runner.
 const DEV = typeof __DEV__ !== 'undefined' && __DEV__;
-const IOS_WARNING =
-  '[Unilitix] iOS is not supported by react-native-unilitix yet — ' +
-  'every call is a no-op on this platform. Check Unilitix.isAvailable.';
 
 /** The user's consent to analytics and replay collection. */
 export type UnilitixConsent = 'granted' | 'pending' | 'denied';
@@ -72,9 +70,10 @@ export interface UnilitixConfig {
   /**
    * Consent state to start in when the user has not decided yet.
    * `'granted'` collects and uploads (default). `'denied'` collects nothing.
-   * `'pending'` is accepted for parity with the Flutter SDK; on React Native
-   * it currently behaves like `'denied'` until `setConsent('granted')` —
-   * the Android library does not yet hold data while a decision is pending.
+   * `'pending'` keeps events on the device and uploads nothing until
+   * `setConsent('granted')` (iOS). On Android it currently behaves like
+   * `'denied'` until consent is granted: the Android library does not yet
+   * hold data while a decision is pending.
    * @default 'granted'
    */
   consent?: UnilitixConsent;
@@ -141,10 +140,11 @@ type NativeUnilitix = {
   optOut(options: Record<string, never>): Promise<void>;
   optIn(options: Record<string, never>): Promise<void>;
   reset(options: Record<string, never>): Promise<void>;
+  /** iOS only: the core supports a real pending state. */
+  setConsent?(options: { value: UnilitixConsent }): Promise<void>;
 };
 
 function native(): NativeUnilitix | null {
-  if (IS_IOS) return null;
   const m = NativeModules.Unilitix as NativeUnilitix | undefined;
   if (!m) throw new Error(LINKING_ERROR);
   return m;
@@ -156,7 +156,6 @@ let _initPromise: Promise<void> | null = null;
 let _initialized = false;
 let _consent: UnilitixConsent = 'granted';
 let _screenEventReceived = false;
-let _iosWarned = false;
 let _crashHandlerInstalled = false;
 
 /**
@@ -167,12 +166,6 @@ let _crashHandlerInstalled = false;
 const PRE_INIT_LIMIT = SdkContract.preInitBufferSize;
 const _preInit: Array<() => Promise<void>> = [];
 
-function warnIos() {
-  if (_iosWarned) return;
-  _iosWarned = true;
-  console.warn(IOS_WARNING);
-}
-
 /**
  * Runs [fn] now when the SDK is ready, queues it when init is in flight,
  * and drops it (with a warning) when init was never called. Native
@@ -180,10 +173,6 @@ function warnIos() {
  * the app.
  */
 function whenReady(what: string, fn: (m: NativeUnilitix) => Promise<void>) {
-  if (IS_IOS) {
-    warnIos();
-    return Promise.resolve();
-  }
   const run = () => {
     const m = native();
     if (!m) return Promise.resolve();
@@ -244,10 +233,10 @@ function buildInitOptions(apiKey: string, config?: UnilitixConfig) {
 const Unilitix = {
   /**
    * True when the SDK can collect on this platform and the native module is
-   * linked. False on iOS (not supported yet) and in Expo Go.
+   * linked (false in Expo Go).
    */
   get isAvailable(): boolean {
-    return !IS_IOS && !!NativeModules.Unilitix;
+    return !!NativeModules.Unilitix;
   },
 
   /** True once `init()` has completed on the native side. */
@@ -272,17 +261,12 @@ const Unilitix = {
    */
   init(apiKey: string, config?: UnilitixConfig): Promise<void> {
     if (_initPromise) return _initPromise;
-    if (IS_IOS) {
-      warnIos();
-      _initPromise = Promise.resolve();
-      return _initPromise;
-    }
     _consent = config?.consent ?? 'granted';
     _initPromise = (async () => {
       const m = native();
       if (!m) return;
-      await m.init(buildInitOptions(apiKey, config));
-      if (_consent !== 'granted') {
+      await m.init({ ...buildInitOptions(apiKey, config), consent: _consent });
+      if (_consent !== 'granted' && !isIOS()) {
         // The Android library has no "pending" state yet: collection is off
         // until setConsent('granted'). Documented on UnilitixConfig.consent.
         await m.optOut({}).catch(() => undefined);
@@ -408,14 +392,17 @@ const Unilitix = {
   },
 
   /**
-   * Record the user's consent decision. `'granted'` resumes collection;
-   * `'denied'` (and, for now, `'pending'`) stops it.
+   * Record the user's consent decision, persisted across launches.
+   * `'granted'` uploads (including anything held while pending); `'denied'`
+   * stops collection and deletes what is queued; `'pending'` holds data on
+   * the device (iOS; on Android it stops collection until granted).
    */
   setConsent(value: UnilitixConsent): Promise<void> {
     _consent = value;
-    return whenReady('setConsent', (m) =>
-      value === 'granted' ? m.optIn({}) : m.optOut({})
-    );
+    return whenReady('setConsent', (m) => {
+      if (isIOS() && m.setConsent) return m.setConsent({ value });
+      return value === 'granted' ? m.optIn({}) : m.optOut({});
+    });
   },
 
   /** Stop all tracking. Same as `setConsent('denied')`. */
@@ -444,7 +431,6 @@ const Unilitix = {
     _initialized = false;
     _consent = 'granted';
     _screenEventReceived = false;
-    _iosWarned = false;
     _crashHandlerInstalled = false;
     _preInit.length = 0;
   },
@@ -507,7 +493,7 @@ const FATAL_FLUSH_BUDGET_MS = SdkContract.fatalFlushBudgetMs;
  * Does not replace React Native's default error handler — chains to it.
  */
 export function setupUnilitixCrashHandler(): void {
-  if (IS_IOS || _crashHandlerInstalled) return;
+  if (_crashHandlerInstalled) return;
   _crashHandlerInstalled = true;
 
   const errorUtils = (globalThis as any).ErrorUtils;

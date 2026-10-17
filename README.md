@@ -139,8 +139,8 @@ await Unilitix.init('YOUR_API_KEY', {
 
 `init()` is memoised and calls made before it resolves (`track`, `screen`,
 `identify`, …) are queued and replayed in order, so you can track from the
-first render. `Unilitix.isAvailable` is `false` on iOS and in Expo Go, where
-every call is a no-op.
+first render. `Unilitix.isAvailable` is `false` in Expo Go, where every call
+is a no-op.
 
 ## Privacy
 
@@ -173,5 +173,18 @@ await Unilitix.flush();
 | Platform     | Version      |
 |--------------|--------------|
 | Android      | API 21+      |
-| iOS          | Gracefully no-ops — coming soon |
+| iOS          | Events, sessions, errors and crashes (replay and auto-capture coming) |
 | React Native | 0.71+        |
+
+## iOS internals
+
+The iOS side embeds [UnilitixCore](https://github.com/Unilitix-hq/unilitix-ios),
+the native Unilitix iOS SDK. Its Swift sources are vendored into
+`ios/UnilitixCore/` so the pod builds with any React Native version and no
+extra dependency; `ios/UnilitixBridge.swift` adapts it to the JS bridge.
+After changing UnilitixCore, refresh the copy with:
+
+```sh
+yarn ios:core   # scripts/sync-ios-core.sh ../unilitix-ios/UnilitixCore
+```
+
