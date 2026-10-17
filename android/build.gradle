@@ -71,5 +71,5 @@ android {
 
 dependencies {
   implementation "com.facebook.react:react-android"
-  implementation 'com.unilitix:unilitix-android:1.4.1'
+  implementation 'com.unilitix:unilitix-android:1.4.2'
 }
