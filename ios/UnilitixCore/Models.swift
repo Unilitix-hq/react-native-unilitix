@@ -1,4 +1,4 @@
-// VENDORED from UnilitixCore 0.2.0 (Models.swift) by scripts/sync-ios-core.sh.
+// VENDORED from UnilitixCore 0.3.0 (Models.swift) by scripts/sync-ios-core.sh.
 // Do not edit here; change UnilitixCore and re-run the script.
 
 import Foundation
@@ -150,4 +150,38 @@ enum ISO8601 {
         lock.lock(); defer { lock.unlock() }
         return formatter.string(from: date)
     }
+}
+
+/// `ScreenshotInitRequest` in openapi.sdk.json: reserve upload slots.
+struct ScreenshotInitRequest: Encodable {
+    var sessionId: String
+    var count: Int
+    var ordinals: [Int]
+}
+
+/// `ScreenshotInitResponse` in openapi.sdk.json.
+struct ScreenshotInitResponse: Decodable {
+    struct Slot: Decodable {
+        var ordinal: Int
+        var presignedUrl: String
+        var r2Key: String?
+    }
+    var slots: [Slot]
+}
+
+/// `ScreenshotConfirmItem` in openapi.sdk.json: the frame's metadata, which
+/// the API stores only from this call.
+struct ScreenshotConfirmItem: Encodable {
+    var ordinal: Int
+    var bytes: Int
+    var capturedAt: String
+    var screenName: String
+    var viewportWidth: Int
+    var viewportHeight: Int
+}
+
+/// `ScreenshotConfirmRequest` in openapi.sdk.json.
+struct ScreenshotConfirmRequest: Encodable {
+    var sessionId: String
+    var screenshots: [ScreenshotConfirmItem]
 }

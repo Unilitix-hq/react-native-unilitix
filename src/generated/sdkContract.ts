@@ -3,7 +3,7 @@
 
 /** The Unilitix SDK contract (see sdk-contract.md in the api repo). */
 export const SdkContract = {
-  version: "1.0.0",
+  version: "1.2.0",
   eventTypes: ["SESSION_START", "TAP", "RAGE_TAP", "SCROLL", "NAVIGATE", "CUSTOM", "EXCEPTION", "CRASH"],
   eventTypeAliases: { "NAV": "NAVIGATE" },
   networkTypes: ["WIFI", "4G", "3G", "2G"],
@@ -56,7 +56,7 @@ export const SdkContract = {
     maxScreenshotsPerMinute: 20,
     screenshotHeartbeatMs: 10000,
   },
-  divergences: ["consent", "maskInputsInScreenshots", "maxScreenshotsPerMinute", "maxScreenshotsPerSession", "maxSnapshotsPerSession", "screenshotHeartbeatMs"],
+  divergences: ["maxScreenshotsPerSession", "maxSnapshotsPerSession"],
   /** Fingerprint conformance cases (JVM and Hermes stacks). */
   fingerprintVectors: [
     { name: "no stack", exceptionType: "StateError", stack: null, fingerprint: "784c89e082adf0f1" },

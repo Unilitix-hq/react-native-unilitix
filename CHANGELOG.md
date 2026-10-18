@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.4.0] - 2026-10-18
+
+### Added
+- **Session replay on iOS.** Screenshots are captured when the screen
+  changes (plus a heartbeat on static screens), masked on the device, capped
+  per minute and per session, and uploaded through the same screenshot API as
+  Android, on Wi-Fi only by default. Text, inputs and (optionally) images are
+  masked before a frame is saved: `maskAllText` (default on), `maskInputs`,
+  `maskImages`. New options `maxScreenshotsPerMinute` (20) and
+  `screenshotHeartbeatMs` (10000) apply on iOS. Embeds UnilitixCore 0.3.0.
+- `maskInputsInScreenshots` option (defaults to `maskInputs`).
+
+### Changed
+- **`consent: 'pending'` now works on Android.** Data is held on the device
+  until `setConsent('granted')` uploads it or `setConsent('denied')` deletes
+  it, as on iOS; it no longer behaves like `'denied'`. `setConsent` calls the
+  native consent API on both platforms. Requires unilitix-android 1.5.1
+  (bumped here), which also makes `debug: true` log in release builds.
+
+### Note
+- SwiftUI screens have no UIKit text views to mask individually, so with
+  `maskAllText` on (the default) their replay frames are fully masked.
+  View-tree snapshots (`captureSnapshots`) are still Android-only.
+
 ## [1.3.0] - 2026-10-18
 
 ### Added

@@ -11,7 +11,7 @@ public final class UnilitixBridge: NSObject {
 
     /// This package's version; must match package.json (checked by
     /// src/__tests__/ios.test.tsx).
-    static let packageVersion = "1.3.0"
+    static let packageVersion = "1.4.0"
 
     private static let lock = NSLock()
     private static var engine: Engine?
@@ -39,6 +39,20 @@ public final class UnilitixBridge: NSObject {
         if let v = options["flushBatchSize"] as? Int { config.flushBatchSize = v }
         if let v = options["maxOfflineEvents"] as? Int { config.maxOfflineEvents = v }
         if let v = options["sessionTimeoutSeconds"] as? Int { config.sessionTimeoutSeconds = v }
+        // Session replay (screenshots). Wireframe snapshots are not on iOS yet.
+        if let v = options["captureScreenshots"] as? Bool { config.captureScreenshots = v }
+        if let v = options["screenshotIntervalMs"] as? Int { config.screenshotIntervalMs = v }
+        if let v = options["screenshotHeartbeatMs"] as? Int { config.screenshotHeartbeatMs = v }
+        if let v = options["screenshotQuality"] as? Int { config.screenshotQuality = v }
+        if let v = options["screenshotMaxWidth"] as? Int { config.screenshotMaxWidth = v }
+        if let v = options["uploadScreenshotsOnWifiOnly"] as? Bool { config.uploadScreenshotsOnWifiOnly = v }
+        if let v = options["maxScreenshotsPerSession"] as? Int { config.maxScreenshotsPerSession = v }
+        if let v = options["maxScreenshotsPerMinute"] as? Int { config.maxScreenshotsPerMinute = v }
+        if let v = (options["replaySampleRate"] ?? options["sampleRate"]) as? Double { config.replaySampleRate = v }
+        if let v = options["maskInputs"] as? Bool { config.maskInputs = v }
+        if let v = options["maskAllText"] as? Bool { config.maskAllText = v }
+        if let v = options["maskImages"] as? Bool { config.maskImages = v }
+        if let v = options["maskInputsInScreenshots"] as? Bool { config.maskInputsInScreenshots = v }
         let consent = (options["consent"] as? String).flatMap(UnilitixConsent.init(rawValue:)) ?? .granted
 
         let debug = config.debug
@@ -49,6 +63,8 @@ public final class UnilitixBridge: NSObject {
             prefs: Preferences(),
             device: DeviceInfo.current(),
             consent: consent,
+            screenshots: ScreenshotStore(directory: ScreenshotStore.defaultDirectory),
+            reachability: PathReachability(),
             log: { if debug { NSLog("[Unilitix] %@", $0) } })
         engine = e
 
@@ -59,8 +75,14 @@ public final class UnilitixBridge: NSObject {
             CrashReporter.install(e)
         }
         e.queue.async { e.start() }
-        if config.autoTrackTaps {
-            DispatchQueue.main.async { AutoCapture.install(e, screens: false, taps: true) }
+        let taps = config.autoTrackTaps
+        let replay = config.captureScreenshots
+        if taps || replay {
+            let replayConfig = config
+            DispatchQueue.main.async {
+                AutoCapture.install(e, screens: false, taps: taps, replay: replay)
+                if replay { ScreenshotCapture.install(e, config: replayConfig) }
+            }
         }
 
         #if canImport(UIKit)

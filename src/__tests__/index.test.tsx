@@ -123,13 +123,30 @@ describe('Unilitix SDK', () => {
       expect(Unilitix.isInitialized).toBe(true);
     });
 
-    it('starts opted out when consent is denied or pending', async () => {
+    it('passes pending consent to native init instead of opting out', async () => {
+      NativeModules.Unilitix.setConsent = jest
+        .fn()
+        .mockResolvedValue(undefined);
       await Unilitix.init('k', {
         consent: 'pending',
         installJsCrashHandler: false,
       });
-      expect(NativeModules.Unilitix.optOut).toHaveBeenCalledTimes(1);
+      expect(NativeModules.Unilitix.init).toHaveBeenCalledWith(
+        expect.objectContaining({ consent: 'pending' })
+      );
+      expect(NativeModules.Unilitix.optOut).not.toHaveBeenCalled();
       expect(Unilitix.consent).toBe('pending');
+      await Unilitix.setConsent('granted');
+      expect(NativeModules.Unilitix.setConsent).toHaveBeenCalledWith({
+        value: 'granted',
+      });
+      expect(NativeModules.Unilitix.optIn).not.toHaveBeenCalled();
+    });
+
+    it('falls back to optIn/optOut when native setConsent is missing', async () => {
+      await Unilitix.init('k', { installJsCrashHandler: false });
+      await Unilitix.setConsent('denied');
+      expect(NativeModules.Unilitix.optOut).toHaveBeenCalledTimes(1);
       await Unilitix.setConsent('granted');
       expect(NativeModules.Unilitix.optIn).toHaveBeenCalledTimes(1);
     });

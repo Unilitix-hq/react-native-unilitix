@@ -123,7 +123,7 @@ await Unilitix.init('YOUR_API_KEY', {
   // Privacy
   consent: 'granted',           // 'denied' collects nothing; see below
   maskInputs: true,
-  maskAllText: true,            // applied once unilitix-android exposes it
+  maskAllText: true,            // iOS; applied on Android once the library exposes it
   maskImages: false,
   captureSnapshots: true,       // session replay DOM snapshots
   captureScreenshots: true,     // session replay screenshots
@@ -150,10 +150,11 @@ Unilitix.setConsent('granted');  // resume tracking (same as optIn)
 Unilitix.reset();                // clear user identity
 ```
 
-`consent: 'pending'` is accepted for parity with the Flutter SDK, but on
-React Native it currently behaves like `'denied'` until
-`setConsent('granted')`: the Android library does not yet hold data while a
-decision is pending.
+Apps that must ask first (NDPR, GDPR) start with `consent: 'pending'`:
+events and replay are kept on the device and nothing is uploaded until
+`setConsent('granted')` sends them, or `setConsent('denied')` deletes them.
+The decision is persisted and wins over `consent` on later launches. This
+works the same on Android and iOS.
 
 ## Session control
 
@@ -173,7 +174,7 @@ await Unilitix.flush();
 | Platform     | Version      |
 |--------------|--------------|
 | Android      | API 21+      |
-| iOS          | Events, sessions, errors and crashes (replay and auto-capture coming) |
+| iOS          | iOS 13+: events, sessions, errors, crashes, taps, rage taps and screenshot replay |
 | React Native | 0.71+        |
 
 ## iOS internals

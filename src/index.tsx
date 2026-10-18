@@ -21,8 +21,6 @@ const LINKING_ERROR =
   '- You rebuilt the app after installing the package\n' +
   '- You are not using Expo Go\n';
 
-// Read at call time (tests switch platforms).
-const isIOS = () => Platform.OS === 'ios';
 // `__DEV__` is defined by React Native, not by every test runner.
 const DEV = typeof __DEV__ !== 'undefined' && __DEV__;
 
@@ -70,15 +68,19 @@ export interface UnilitixConfig {
   /**
    * Consent state to start in when the user has not decided yet.
    * `'granted'` collects and uploads (default). `'denied'` collects nothing.
-   * `'pending'` keeps events on the device and uploads nothing until
-   * `setConsent('granted')` (iOS). On Android it currently behaves like
-   * `'denied'` until consent is granted: the Android library does not yet
-   * hold data while a decision is pending.
+   * `'pending'` keeps events (and replay) on the device and uploads nothing
+   * until `setConsent('granted')` sends them, or `setConsent('denied')`
+   * deletes them. Works the same on iOS and Android.
+   * A decision recorded with `setConsent` on an earlier launch wins.
    * @default 'granted'
    */
   consent?: UnilitixConsent;
   /** Mask text inputs in replay snapshots and screenshots. Default: true */
   maskInputs?: boolean;
+  /**
+   * Mask text inputs in screenshots specifically. Defaults to `maskInputs`.
+   */
+  maskInputsInScreenshots?: boolean;
   /**
    * Mask every text view in replay (balances, names, OTPs are usually plain
    * text). Default: true. Not yet honoured by unilitix-android < 1.5; sent
@@ -113,6 +115,17 @@ export interface UnilitixConfig {
   screenshotMaxWidth?: number;
   /** Max screenshots stored per session. Default: 300 */
   maxScreenshotsPerSession?: number;
+  /**
+   * Max screenshots per rolling minute (iOS; Android ignores it for now).
+   * Default: 20
+   */
+  maxScreenshotsPerMinute?: number;
+  /**
+   * Capture a frame this often (ms) even when the screen does not change,
+   * so a replay never looks frozen (iOS; Android ignores it). 0 turns it off.
+   * Default: 10000
+   */
+  screenshotHeartbeatMs?: number;
 }
 
 /** Shape of every native call: one options object, one promise. */
@@ -206,6 +219,8 @@ function buildInitOptions(apiKey: string, config?: UnilitixConfig) {
     maxOfflineEvents: config?.maxOfflineEvents ?? 1000,
     sessionTimeoutSeconds: config?.sessionTimeoutSeconds ?? 1800,
     maskInputs: config?.maskInputs ?? true,
+    maskInputsInScreenshots:
+      config?.maskInputsInScreenshots ?? config?.maskInputs ?? true,
     maskAllText: config?.maskAllText ?? true,
     maskImages: config?.maskImages ?? false,
     captureSnapshots: config?.captureSnapshots ?? true,
@@ -218,6 +233,8 @@ function buildInitOptions(apiKey: string, config?: UnilitixConfig) {
     screenshotQuality: config?.screenshotQuality ?? 30,
     screenshotMaxWidth: config?.screenshotMaxWidth ?? 480,
     maxScreenshotsPerSession: config?.maxScreenshotsPerSession ?? 300,
+    maxScreenshotsPerMinute: config?.maxScreenshotsPerMinute ?? 20,
+    screenshotHeartbeatMs: config?.screenshotHeartbeatMs ?? 10000,
   };
 }
 
@@ -265,12 +282,9 @@ const Unilitix = {
     _initPromise = (async () => {
       const m = native();
       if (!m) return;
+      // Both native layers take the initial consent (pending included);
+      // a decision persisted on an earlier launch wins over it.
       await m.init({ ...buildInitOptions(apiKey, config), consent: _consent });
-      if (_consent !== 'granted' && !isIOS()) {
-        // The Android library has no "pending" state yet: collection is off
-        // until setConsent('granted'). Documented on UnilitixConfig.consent.
-        await m.optOut({}).catch(() => undefined);
-      }
       _initialized = true;
       if (config?.installJsCrashHandler !== false) {
         setupUnilitixCrashHandler();
@@ -395,12 +409,13 @@ const Unilitix = {
    * Record the user's consent decision, persisted across launches.
    * `'granted'` uploads (including anything held while pending); `'denied'`
    * stops collection and deletes what is queued; `'pending'` holds data on
-   * the device (iOS; on Android it stops collection until granted).
+   * the device without uploading it.
    */
   setConsent(value: UnilitixConsent): Promise<void> {
     _consent = value;
     return whenReady('setConsent', (m) => {
-      if (isIOS() && m.setConsent) return m.setConsent({ value });
+      if (m.setConsent) return m.setConsent({ value });
+      // Older native modules without setConsent.
       return value === 'granted' ? m.optIn({}) : m.optOut({});
     });
   },
