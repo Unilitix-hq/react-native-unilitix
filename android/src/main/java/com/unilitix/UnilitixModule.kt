@@ -7,6 +7,7 @@ import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.ReadableMap
 import io.unilitix.sdk.Unilitix
+import io.unilitix.sdk.UnilitixConsent
 
 /**
  * `ReadableMap.toHashMap()` returns `HashMap<String, Any?>` since React Native
@@ -35,8 +36,12 @@ class UnilitixModule(
         ?: return promise.reject("MISSING_API_KEY",
             "apiKey is required")
       val app = reactContext.applicationContext as Application
+      // granted | pending | denied; a decision persisted on an earlier launch
+      // wins inside the library.
+      val consent = UnilitixConsent.fromValue(options.getString("consent"))
+        ?: UnilitixConsent.GRANTED
 
-      Unilitix.init(app, apiKey) {
+      Unilitix.init(app, apiKey, consent) {
         options.getString("apiUrl")
           ?.let { apiUrl = it }
         if (options.hasKey("debug"))
@@ -69,8 +74,12 @@ class UnilitixModule(
           maskInputs = options.getBoolean("maskInputs")
           maskInputsInScreenshots = options.getBoolean("maskInputs")
         }
-        // maskAllText / maskImages are accepted from JS for parity with the
-        // Flutter SDK and applied once unilitix-android exposes them.
+        if (options.hasKey("maskInputsInScreenshots"))
+          maskInputsInScreenshots =
+            options.getBoolean("maskInputsInScreenshots")
+        // maskAllText, maskImages, maxScreenshotsPerMinute and
+        // screenshotHeartbeatMs are honoured on iOS; they are applied here
+        // once unilitix-android exposes them.
         if (options.hasKey("captureSnapshots"))
           captureSnapshots =
             options.getBoolean("captureSnapshots")
@@ -204,6 +213,20 @@ class UnilitixModule(
     try { Unilitix.flush(); promise.resolve(null) }
     catch (e: Exception) {
       promise.reject("FLUSH_ERROR", e.message, e)
+    }
+  }
+
+  /** `{ value: 'granted' | 'pending' | 'denied' }`, persisted by the library. */
+  @ReactMethod
+  fun setConsent(options: ReadableMap, promise: Promise) {
+    try {
+      val consent = UnilitixConsent.fromValue(options.getString("value"))
+        ?: return promise.reject("INVALID_CONSENT",
+            "value must be granted, pending or denied")
+      Unilitix.setConsent(consent)
+      promise.resolve(null)
+    } catch (e: Exception) {
+      promise.reject("CONSENT_ERROR", e.message, e)
     }
   }
 

@@ -1,18 +1,22 @@
-// VENDORED from UnilitixCore 0.2.0 (Engine.swift) by scripts/sync-ios-core.sh.
+// VENDORED from UnilitixCore 0.3.0 (Engine.swift) by scripts/sync-ios-core.sh.
 // Do not edit here; change UnilitixCore and re-run the script.
 
 import Foundation
 
-/// The SDK's state machine. Everything except the crash path runs on `queue`.
+/// The SDK's state machine. Everything except the crash path and
+/// `replayGate()` runs on `queue`.
 final class Engine {
     let config: UnilitixConfig
     let store: EventStore
+    let screenshots: ScreenshotStore
     let breadcrumbs = Breadcrumbs()
     let queue = DispatchQueue(label: "io.unilitix.engine", qos: .utility)
 
     private let transport: Transport
     private let prefs: Preferences
     private let device: DeviceInfo
+    private let reachability: Reachability
+    private let random: () -> Double
     private let now: () -> Date
     private let log: (String) -> Void
 
@@ -24,6 +28,7 @@ final class Engine {
     private var seq = 0
 
     // Upload state (contract: one request per cycle, backoff window, auth latch).
+    // `inFlight` covers event batches and screenshot passes alike.
     private var inFlight = false
     private var failures = 0
     private(set) var backoffUntil: Date?
@@ -34,19 +39,44 @@ final class Engine {
     private var seenFingerprints: [String: Int] = [:]
     private var errorReports = 0
 
+    // Session replay. `replaySampled` and `screenshotCount` belong to the
+    // current session; the gate is what the main-thread capturer reads.
+    private var replaySampled = false
+    private var screenshotCount = 0
+    private let replayLock = NSLock()
+    private var gate: ReplayGate?
+    // Storage PUT failures back off separately: a storage outage must not
+    // hold back events.
+    private var screenshotFailures = 0
+    private(set) var screenshotBackoffUntil: Date?
+    private var screenshotPasses = 0
+
+    /// Frames per init request (the API accepts 1–200).
+    static let screenshotsPerPass = 20
+    /// Passes chained in one flush cycle while each one fully succeeds.
+    static let maxScreenshotPassesPerCycle = 10
+    /// The API presigns upload URLs for this type; the PUT must send it.
+    static let screenshotContentType = "image/webp"
+
     /// Read by the crash handler without going through `queue`.
     private let sessionLock = NSLock()
     private var crashSessionId: String?
 
     init(config: UnilitixConfig, transport: Transport, store: EventStore,
          prefs: Preferences, device: DeviceInfo, consent: UnilitixConsent,
+         screenshots: ScreenshotStore = ScreenshotStore(directory: nil),
+         reachability: Reachability = PathReachability(),
+         random: @escaping () -> Double = { Double.random(in: 0..<1) },
          now: @escaping () -> Date = Date.init,
          log: @escaping (String) -> Void = { _ in }) {
         self.config = config
         self.transport = transport
         self.store = store
+        self.screenshots = screenshots
         self.prefs = prefs
         self.device = device
+        self.reachability = reachability
+        self.random = random
         self.now = now
         self.log = log
         // A decision persisted from a previous launch wins over the argument.
@@ -101,11 +131,15 @@ final class Engine {
         seq = 0
         seenFingerprints = [:]
         errorReports = 0
+        screenshotCount = 0
+        replaySampled = config.captureScreenshots
+            && ReplaySampling.isSampled(rate: config.replaySampleRate, roll: random())
         breadcrumbs.clear()
         sessionLock.lock(); crashSessionId = info.id; sessionLock.unlock()
         store.upsertSession(info)
         emit(IngestEvent(type: "SESSION_START", screen: screen, at: t))
-        log("session \(info.id) started")
+        publishReplayGate()
+        log("session \(info.id) started\(config.captureScreenshots && !replaySampled ? " (replay not sampled)" : "")")
     }
 
     /// Ends the current session and uploads it; the next event starts a new one.
@@ -114,6 +148,7 @@ final class Engine {
         flush()
         store.saveNow()
         session = nil
+        publishReplayGate()
     }
 
     private func touchSession() {
@@ -140,6 +175,7 @@ final class Engine {
         screen = name
         breadcrumbs.add(type: "NAVIGATE", screen: name)
         emit(IngestEvent(type: "NAVIGATE", screen: name, at: now()))
+        publishReplayGate()
     }
 
     /// A tap at (x, y) in points; becomes a RAGE_TAP when it completes one.
@@ -237,6 +273,46 @@ final class Engine {
         if store.eventCount >= config.flushBatchSize { flush() }
     }
 
+    // MARK: Session replay
+
+    /// The session and screen a new frame belongs to, or nil when no frame is
+    /// wanted. Safe to call from any thread (the capturer calls it on main).
+    func replayGate() -> ReplayGate? {
+        replayLock.lock(); defer { replayLock.unlock() }
+        return gate
+    }
+
+    private func publishReplayGate() {
+        var g: ReplayGate?
+        if config.captureScreenshots, consent != .denied, replaySampled, let s = session,
+           screenshotCount < config.maxScreenshotsPerSession {
+            g = ReplayGate(sessionId: s.id, screen: screen)
+        }
+        replayLock.lock(); gate = g; replayLock.unlock()
+    }
+
+    /// A masked, encoded frame from the capturer. Assigns the next ordinal of
+    /// the session it was captured in, or drops it (returning nil) when that
+    /// session has ended, is not sampled, or reached its cap.
+    @discardableResult
+    func addScreenshot(_ jpeg: Data, sessionId: String, screen frameScreen: String, capturedAt: Date,
+                       viewportWidth: Int, viewportHeight: Int) -> Int? {
+        guard config.captureScreenshots, consent != .denied, replaySampled,
+              let s = session, s.id == sessionId,
+              screenshotCount < config.maxScreenshotsPerSession else { return nil }
+        let ordinal = screenshotCount
+        screenshotCount += 1
+        let frame = PendingScreenshot(sessionId: sessionId, ordinal: ordinal, screenName: frameScreen,
+                                      capturedAt: capturedAt, viewportWidth: viewportWidth,
+                                      viewportHeight: viewportHeight, bytes: jpeg.count)
+        if !screenshots.add(frame, jpeg: jpeg) { log("screenshot \(ordinal) could not be stored") }
+        if screenshotCount >= config.maxScreenshotsPerSession {
+            log("screenshot cap (\(config.maxScreenshotsPerSession)) reached for this session")
+            publishReplayGate()
+        }
+        return ordinal
+    }
+
     // MARK: Identity and consent
 
     func identify(_ userId: String, traits: [String: Any]) {
@@ -261,6 +337,7 @@ final class Engine {
         switch value {
         case .denied:
             store.purge()
+            screenshots.purge()
             session = nil
             sessionLock.lock(); crashSessionId = nil; sessionLock.unlock()
         case .granted:
@@ -269,6 +346,7 @@ final class Engine {
         case .pending:
             if previous == .denied { startSession() }
         }
+        publishReplayGate()
     }
 
     /// New anonymous identity and a new session (e.g. on logout).
@@ -283,8 +361,12 @@ final class Engine {
     func flush() {
         guard consent == .granted, !authRejected, !inFlight else { return }
         if let until = backoffUntil, now() < until { return }
+        screenshotPasses = 0
         touchSession()
-        guard let batch = store.nextBatch(limit: config.flushBatchSize) else { return }
+        guard let batch = store.nextBatch(limit: config.flushBatchSize) else {
+            uploadScreenshots()
+            return
+        }
 
         var events = batch.events
         var body = encode(batch.session, events)
@@ -313,23 +395,40 @@ final class Engine {
 
     private func handle(status: Int?, headers: [String: String], sent: Batch) {
         inFlight = false
-        switch RetryPolicy.classify(status: status, headers: headers, attempt: failures) {
+        switch note(status: status, headers: headers, what: "upload") {
         case .accepted:
-            failures = 0
-            backoffUntil = nil
             store.acknowledge(sent.batch, eventIds: Set(sent.events.map { $0.eventId }), keep: session?.id)
-            if store.nextBatch(limit: 1) != nil, store.eventCount >= config.flushBatchSize { flush() }
-        case .retry(let after):
-            failures += 1
-            backoffUntil = now().addingTimeInterval(after)
-            log("upload failed (\(status.map { "HTTP \($0)" } ?? "no response")); retrying in \(Int(after))s")
-        case .authFailure:
-            authRejected = true
-            log("API key rejected (\(status ?? 0)). Uploads paused until the app restarts; data stays on the device.")
+            if store.nextBatch(limit: 1) != nil, store.eventCount >= config.flushBatchSize {
+                flush()
+            } else {
+                uploadScreenshots()
+            }
+        case .retry, .authFailure:
+            break
         case .rejected:
             log("batch rejected by the API (\(status ?? 0)); dropped")
             store.acknowledge(sent.batch, eventIds: Set(sent.events.map { $0.eventId }), keep: session?.id)
         }
+    }
+
+    /// Applies an API response to the shared backoff and auth state.
+    private func note(status: Int?, headers: [String: String], what: String) -> UploadOutcome {
+        let outcome = RetryPolicy.classify(status: status, headers: headers, attempt: failures)
+        switch outcome {
+        case .accepted:
+            failures = 0
+            backoffUntil = nil
+        case .retry(let after):
+            failures += 1
+            backoffUntil = now().addingTimeInterval(after)
+            log("\(what) failed (\(status.map { "HTTP \($0)" } ?? "no response")); retrying in \(Int(after))s")
+        case .authFailure:
+            authRejected = true
+            log("API key rejected (\(status ?? 0)). Uploads paused until the app restarts; data stays on the device.")
+        case .rejected:
+            break
+        }
+        return outcome
     }
 
     private func encode(_ s: SessionInfo, _ events: [IngestEvent]) -> Data? {
@@ -357,5 +456,153 @@ final class Engine {
             crashed: s.crashed,
             events: events)
         return try? JSONEncoder().encode(req)
+    }
+
+    // MARK: Screenshot upload
+    //
+    // One pass: POST /screenshots/init for up to `screenshotsPerPass` frames
+    // of the oldest session, PUT each JPEG to its presigned URL, then one
+    // POST /screenshots/confirm for the frames that went up. Frames are
+    // deleted only once confirmed (or rejected for good). Runs only with
+    // consent granted, outside any backoff, and on Wi-Fi when
+    // `uploadScreenshotsOnWifiOnly`.
+
+    private struct ScreenshotPass {
+        let sessionId: String
+        let frames: [PendingScreenshot]
+        var urls: [Int: URL] = [:]
+    }
+
+    func uploadScreenshots() {
+        guard consent == .granted, !authRejected, !inFlight else { return }
+        let t = now()
+        if let until = backoffUntil, t < until { return }
+        if let until = screenshotBackoffUntil, t < until { return }
+        if config.uploadScreenshotsOnWifiOnly && !reachability.isOnUnmeteredNetwork { return }
+        guard screenshotPasses < Engine.maxScreenshotPassesPerCycle,
+              let next = screenshots.nextUpload(limit: Engine.screenshotsPerPass) else { return }
+        let req = ScreenshotInitRequest(sessionId: next.sessionId, count: next.frames.count,
+                                        ordinals: next.frames.map { $0.ordinal })
+        guard let body = try? JSONEncoder().encode(req) else { return }
+        screenshotPasses += 1
+        inFlight = true
+        let pass = ScreenshotPass(sessionId: next.sessionId, frames: next.frames)
+        transport.postForResponse("/v1/ingest/screenshots/init", body: body) { [weak self] status, headers, data in
+            self?.queue.async { self?.handleInit(status: status, headers: headers, body: data, pass: pass) }
+        }
+    }
+
+    private func handleInit(status: Int?, headers: [String: String], body: Data?, pass: ScreenshotPass) {
+        switch note(status: status, headers: headers, what: "screenshot init") {
+        case .accepted:
+            guard let data = body,
+                  let response = try? JSONDecoder().decode(ScreenshotInitResponse.self, from: data) else {
+                log("screenshot init: unexpected response; retrying later")
+                backOffScreenshots()
+                inFlight = false
+                return
+            }
+            var p = pass
+            for slot in response.slots {
+                if let url = URL(string: slot.presignedUrl) { p.urls[slot.ordinal] = url }
+            }
+            putScreenshot(0, p, uploaded: [])
+        case .retry, .authFailure:
+            inFlight = false
+        case .rejected:
+            log("screenshots rejected by the API (\(status ?? 0)); \(pass.frames.count) dropped")
+            screenshots.remove(pass.frames)
+            inFlight = false
+        }
+    }
+
+    private func putScreenshot(_ index: Int, _ pass: ScreenshotPass, uploaded: [PendingScreenshot]) {
+        guard consent == .granted, !authRejected else {
+            inFlight = false
+            return
+        }
+        guard index < pass.frames.count else {
+            confirmScreenshots(uploaded, pass)
+            return
+        }
+        let frame = pass.frames[index]
+        guard let url = pass.urls[frame.ordinal] else {
+            log("no upload slot for screenshot \(frame.ordinal); retrying later")
+            putScreenshot(index + 1, pass, uploaded: uploaded)
+            return
+        }
+        guard let data = screenshots.data(for: frame) else {
+            screenshots.remove([frame])  // its file is gone
+            putScreenshot(index + 1, pass, uploaded: uploaded)
+            return
+        }
+        transport.put(url, body: data, contentType: Engine.screenshotContentType) { [weak self] status in
+            self?.queue.async { self?.handlePut(status: status, index: index, pass: pass, uploaded: uploaded) }
+        }
+    }
+
+    private func handlePut(status: Int?, index: Int, pass: ScreenshotPass, uploaded: [PendingScreenshot]) {
+        let frame = pass.frames[index]
+        if let s = status, (200..<300).contains(s) {
+            screenshotFailures = 0
+            screenshotBackoffUntil = nil
+            putScreenshot(index + 1, pass, uploaded: uploaded + [frame])
+            return
+        }
+        if let s = status, (400..<500).contains(s), s != 429 {
+            // Storage refused this request (expired or malformed URL). Never
+            // a reason to pause the API key.
+            let dropped = screenshots.recordFailedUpload(frame)
+            log("screenshot \(frame.ordinal) upload refused (HTTP \(s))\(dropped ? "; dropped" : "")")
+        } else {
+            backOffScreenshots()
+            log("screenshot upload failed (\(status.map { "HTTP \($0)" } ?? "no response")); retrying later")
+        }
+        // End the pass; confirm what already went up.
+        confirmScreenshots(uploaded, pass)
+    }
+
+    private func confirmScreenshots(_ uploaded: [PendingScreenshot], _ pass: ScreenshotPass) {
+        guard !uploaded.isEmpty, consent == .granted, !authRejected else {
+            inFlight = false
+            return
+        }
+        let req = ScreenshotConfirmRequest(sessionId: pass.sessionId, screenshots: uploaded.map {
+            ScreenshotConfirmItem(ordinal: $0.ordinal, bytes: $0.bytes,
+                                  capturedAt: ISO8601.string(from: $0.capturedAt),
+                                  screenName: $0.screenName, viewportWidth: $0.viewportWidth,
+                                  viewportHeight: $0.viewportHeight)
+        })
+        guard let body = try? JSONEncoder().encode(req) else {
+            inFlight = false
+            return
+        }
+        let complete = uploaded.count == pass.frames.count
+        transport.post("/v1/ingest/screenshots/confirm", body: body) { [weak self] status, headers in
+            self?.queue.async {
+                self?.handleConfirm(status: status, headers: headers, uploaded: uploaded, complete: complete)
+            }
+        }
+    }
+
+    private func handleConfirm(status: Int?, headers: [String: String], uploaded: [PendingScreenshot],
+                               complete: Bool) {
+        inFlight = false
+        switch note(status: status, headers: headers, what: "screenshot confirm") {
+        case .accepted:
+            screenshots.remove(uploaded)
+            if complete { uploadScreenshots() }  // drain the backlog while all goes well
+        case .rejected:
+            log("screenshot confirm rejected by the API (\(status ?? 0)); \(uploaded.count) dropped")
+            screenshots.remove(uploaded)
+        case .retry, .authFailure:
+            break  // kept; uploaded and confirmed again next time
+        }
+    }
+
+    private func backOffScreenshots() {
+        let after = RetryPolicy.delay(attempt: screenshotFailures)
+        screenshotFailures += 1
+        screenshotBackoffUntil = now().addingTimeInterval(after)
     }
 }

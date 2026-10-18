@@ -1,4 +1,4 @@
-// VENDORED from UnilitixCore 0.2.0 (AutoCapture.swift) by scripts/sync-ios-core.sh.
+// VENDORED from UnilitixCore 0.3.0 (AutoCapture.swift) by scripts/sync-ios-core.sh.
 // Do not edit here; change UnilitixCore and re-run the script.
 
 #if canImport(UIKit) && os(iOS)
@@ -14,11 +14,15 @@ import ObjectiveC
 /// - `UIWindow.sendEvent(_:)`: a tap for every short touch, at its position in
 ///   points. Touches in the keyboard and other system windows are ignored, so
 ///   nothing typed can be reconstructed from tap positions.
+///
+/// With session replay on, both also mark the screen as changed so the next
+/// screenshot is taken (`ScreenshotCapture`).
 @MainActor
 enum AutoCapture {
     private static weak var engine: Engine?
     private static var screens = false
     private static var taps = false
+    private static var replay = false
     private static var installedScreens = false
     private static var installedTaps = false
     /// Where each touch began, to tell a tap from a drag.
@@ -26,17 +30,18 @@ enum AutoCapture {
     private static let maxTapMovement: CGFloat = 10
 
     /// Call on the main thread.
-    static func install(_ e: Engine, screens: Bool, taps: Bool) {
+    static func install(_ e: Engine, screens: Bool, taps: Bool, replay: Bool = false) {
         engine = e
         self.screens = screens
         self.taps = taps
-        if screens && !installedScreens {
+        self.replay = replay
+        if (screens || replay) && !installedScreens {
             installedScreens = true
             swizzle(UIViewController.self,
                     #selector(UIViewController.viewDidAppear(_:)),
                     #selector(UIViewController.unilitix_viewDidAppear(_:)))
         }
-        if taps && !installedTaps {
+        if (taps || replay) && !installedTaps {
             installedTaps = true
             swizzle(UIWindow.self,
                     #selector(UIWindow.sendEvent(_:)),
@@ -45,6 +50,7 @@ enum AutoCapture {
     }
 
     fileprivate static func viewDidAppear(_ vc: UIViewController) {
+        if replay { ScreenshotCapture.markDirty() }
         guard screens, let e = engine, isScreen(vc),
               let name = ScreenName.from(typeName: String(describing: type(of: vc))) else { return }
         e.queue.async { e.screenView(name, automatic: true) }
@@ -58,8 +64,9 @@ enum AutoCapture {
     }
 
     fileprivate static func sendEvent(_ event: UIEvent, in window: UIWindow) {
-        guard taps, let e = engine, event.type == .touches, let touches = event.allTouches,
-              !isSystemWindow(window) else { return }
+        guard event.type == .touches, let touches = event.allTouches, !isSystemWindow(window) else { return }
+        if replay { ScreenshotCapture.markDirty() }  // taps and scrolls change the screen
+        guard taps, let e = engine else { return }
         for touch in touches {
             let id = ObjectIdentifier(touch)
             switch touch.phase {
@@ -81,7 +88,8 @@ enum AutoCapture {
         }
     }
 
-    private static func isSystemWindow(_ window: UIWindow) -> Bool {
+    /// The keyboard and other system windows.
+    static func isSystemWindow(_ window: UIWindow) -> Bool {
         let name = NSStringFromClass(type(of: window))
         return name.contains("Keyboard") || name.contains("TextEffects") || name.contains("RemoteInput")
     }

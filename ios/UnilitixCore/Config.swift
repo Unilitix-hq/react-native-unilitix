@@ -1,4 +1,4 @@
-// VENDORED from UnilitixCore 0.2.0 (Config.swift) by scripts/sync-ios-core.sh.
+// VENDORED from UnilitixCore 0.3.0 (Config.swift) by scripts/sync-ios-core.sh.
 // Do not edit here; change UnilitixCore and re-run the script.
 
 import Foundation
@@ -6,8 +6,9 @@ import Foundation
 /// SDK configuration. Every default is the shared SDK contract's
 /// (`SdkContract.defaults`); `SdkContractTests` fails if one drifts.
 ///
-/// Session replay arrives in UnilitixCore 0.3; its options are listed as iOS
-/// divergences in the contract until then.
+/// Wireframe snapshots (`captureSnapshots`, `snapshotIntervalMs`,
+/// `maxSnapshotsPerSession`) are not implemented on iOS yet and stay listed
+/// as iOS divergences in the contract.
 public struct UnilitixConfig {
     /// Ingest API base URL.
     public var apiUrl: String = "https://api.unilitix.com"
@@ -33,6 +34,48 @@ public struct UnilitixConfig {
     /// Time in the background, in seconds, after which returning to the app
     /// starts a new session.
     public var sessionTimeoutSeconds: Int = 1800
+
+    // MARK: Session replay (screenshots)
+
+    /// Capture screenshots of the app's key window for session replay. They
+    /// are masked on the device (see the `mask*` options), downscaled to
+    /// `screenshotMaxWidth` and JPEG-encoded before they are stored.
+    public var captureScreenshots: Bool = true
+    /// Minimum gap between two screenshots, in milliseconds. A frame is taken
+    /// only after the screen changed (a touch, a scroll, a new screen).
+    public var screenshotIntervalMs: Int = 1000
+    /// On a screen that does not change, take a frame at least this often,
+    /// in milliseconds.
+    public var screenshotHeartbeatMs: Int = 10000
+    /// Rolling one-minute budget, so an animating screen cannot flood the session.
+    public var maxScreenshotsPerMinute: Int = 20
+    /// Stop capturing screenshots after this many in one session.
+    public var maxScreenshotsPerSession: Int = 1500
+    /// JPEG quality, 1–100.
+    public var screenshotQuality: Int = 30
+    /// Screenshots are downscaled to at most this width, in pixels.
+    public var screenshotMaxWidth: Int = 480
+    /// Hold screenshots on the device until it is on Wi-Fi (or wired, and
+    /// not a personal hotspot or Low Data Mode). Events are never held.
+    public var uploadScreenshotsOnWifiOnly: Bool = true
+    /// Fraction of sessions (0–1) that capture screenshots, decided once per
+    /// session. Events are always captured.
+    public var replaySampleRate: Double = 1.0
+    /// Black out text inputs (`UITextField`, `UITextView` and their
+    /// subclasses, including secure entry) in screenshots. Applies even
+    /// inside views marked `unilitixUnmasked`.
+    public var maskInputs: Bool = true
+    /// Black out all text in screenshots (`UILabel`, read-only
+    /// `UITextView`, React Native text, web views and SwiftUI-hosted
+    /// content). Opt a view and its subviews out with
+    /// `view.unilitixUnmasked = true`.
+    public var maskAllText: Bool = true
+    /// Black out images (`UIImageView`) in screenshots.
+    public var maskImages: Bool = false
+    /// Master switch for masking in screenshots (Flutter's
+    /// `maskScreenshots`). When false, only views marked `unilitixPrivate`
+    /// are masked; `maskInputs`, `maskAllText` and `maskImages` are ignored.
+    public var maskInputsInScreenshots: Bool = true
 
     public init() {}
 }
