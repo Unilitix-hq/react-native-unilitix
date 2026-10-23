@@ -1,4 +1,4 @@
-// VENDORED from UnilitixCore 0.3.1 (AutoCapture.swift) by scripts/sync-ios-core.sh.
+// VENDORED from UnilitixCore 0.4.0 (AutoCapture.swift) by scripts/sync-ios-core.sh.
 // Do not edit here; change UnilitixCore and re-run the script.
 
 #if canImport(UIKit) && os(iOS)
@@ -16,13 +16,16 @@ import ObjectiveC
 ///   nothing typed can be reconstructed from tap positions.
 ///
 /// With session replay on, both also mark the screen as changed so the next
-/// screenshot is taken (`ScreenshotCapture`).
+/// screenshot is taken (`ScreenshotCapture`); with view-tree snapshots on,
+/// an appearing view controller asks for the next snapshot
+/// (`SnapshotCapture`).
 @MainActor
 enum AutoCapture {
     private static weak var engine: Engine?
     private static var screens = false
     private static var taps = false
     private static var replay = false
+    private static var snapshots = false
     private static var installedScreens = false
     private static var installedTaps = false
     /// Where each touch began, to tell a tap from a drag.
@@ -30,12 +33,13 @@ enum AutoCapture {
     private static let maxTapMovement: CGFloat = 10
 
     /// Call on the main thread.
-    static func install(_ e: Engine, screens: Bool, taps: Bool, replay: Bool = false) {
+    static func install(_ e: Engine, screens: Bool, taps: Bool, replay: Bool = false, snapshots: Bool = false) {
         engine = e
         self.screens = screens
         self.taps = taps
         self.replay = replay
-        if (screens || replay) && !installedScreens {
+        self.snapshots = snapshots
+        if (screens || replay || snapshots) && !installedScreens {
             installedScreens = true
             swizzle(UIViewController.self,
                     #selector(UIViewController.viewDidAppear(_:)),
@@ -51,6 +55,7 @@ enum AutoCapture {
 
     fileprivate static func viewDidAppear(_ vc: UIViewController) {
         if replay { ScreenshotCapture.markDirty() }
+        if snapshots { SnapshotCapture.markNavigation() }
         guard screens, let e = engine, isScreen(vc),
               let name = ScreenName.from(typeName: String(describing: type(of: vc))) else { return }
         e.queue.async { e.screenView(name, automatic: true) }

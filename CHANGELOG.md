@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.5.1] - 2026-10-23
+
+### Added
+- **View-tree snapshots on iOS.** `captureSnapshots`, `snapshotIntervalMs`
+  and `maxSnapshotsPerSession` now apply on iOS too (embeds UnilitixCore
+  0.4.0). Text follows the same masking as screenshots; private views, web
+  views and SwiftUI content are sent as masked boxes.
+
+### Changed
+- Requires unilitix-android 1.6.1: taps, screen size and replay coordinates
+  are sent in dp (logical pixels, as the contract specifies) instead of
+  physical pixels; private views are kept as masked placeholders; the view
+  tree is read on the main thread. Heatmaps that mix sessions from older
+  Android versions will show those taps at pixel scale.
+
 ## [1.5.0] - 2026-10-23
 
 ### Added

@@ -1,4 +1,4 @@
-// VENDORED from UnilitixCore 0.3.1 (CrashReporter.swift) by scripts/sync-ios-core.sh.
+// VENDORED from UnilitixCore 0.4.0 (CrashReporter.swift) by scripts/sync-ios-core.sh.
 // Do not edit here; change UnilitixCore and re-run the script.
 
 import Foundation

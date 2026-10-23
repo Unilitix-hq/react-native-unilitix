@@ -1,4 +1,4 @@
-// VENDORED from UnilitixCore 0.3.1 (ReplayPrivacy.swift) by scripts/sync-ios-core.sh.
+// VENDORED from UnilitixCore 0.4.0 (ReplayPrivacy.swift) by scripts/sync-ios-core.sh.
 // Do not edit here; change UnilitixCore and re-run the script.
 
 #if canImport(UIKit) && os(iOS)
@@ -12,8 +12,8 @@ private var unilitixUnmaskedKey: UInt8 = 0
 private var unilitixPrivateKey: UInt8 = 0
 
 extension UIView {
-    /// Shows this view and its subviews in session replay screenshots even
-    /// when `maskAllText` or `maskImages` is on. Use it for content with no
+    /// Shows this view and its subviews in session replay (screenshots and
+    /// view-tree snapshots) even when `maskAllText` or `maskImages` is on. Use it for content with no
     /// personal data that is needed to understand the screen: headings,
     /// button labels, navigation, static copy.
     ///
@@ -34,7 +34,8 @@ extension UIView {
 
     /// Always blacks out this view (and everything inside it) in session
     /// replay screenshots, whatever the masking options say: balances, QR
-    /// codes, documents, avatars.
+    /// codes, documents, avatars. In view-tree snapshots it is a `masked`
+    /// node with no text and no subviews.
     @objc public var unilitixPrivate: Bool {
         get { (objc_getAssociatedObject(self, &unilitixPrivateKey) as? NSNumber)?.boolValue ?? false }
         set {
