@@ -1,4 +1,4 @@
-// VENDORED from UnilitixCore 0.3.0 (Engine.swift) by scripts/sync-ios-core.sh.
+// VENDORED from UnilitixCore 0.3.1 (Engine.swift) by scripts/sync-ios-core.sh.
 // Do not edit here; change UnilitixCore and re-run the script.
 
 import Foundation
@@ -55,8 +55,11 @@ final class Engine {
     static let screenshotsPerPass = 20
     /// Passes chained in one flush cycle while each one fully succeeds.
     static let maxScreenshotPassesPerCycle = 10
-    /// The API presigns upload URLs for this type; the PUT must send it.
-    static let screenshotContentType = "image/webp"
+    /// Frames are JPEG (ScreenshotCapture). The init request declares the
+    /// format so the API stores them as .jpg, and the PUT sends the matching
+    /// type (0.3.0 sent JPEG bytes labelled image/webp).
+    static let screenshotFormat = "jpeg"
+    static let screenshotContentType = "image/jpeg"
 
     /// Read by the crash handler without going through `queue`.
     private let sessionLock = NSLock()
@@ -482,7 +485,8 @@ final class Engine {
         guard screenshotPasses < Engine.maxScreenshotPassesPerCycle,
               let next = screenshots.nextUpload(limit: Engine.screenshotsPerPass) else { return }
         let req = ScreenshotInitRequest(sessionId: next.sessionId, count: next.frames.count,
-                                        ordinals: next.frames.map { $0.ordinal })
+                                        ordinals: next.frames.map { $0.ordinal },
+                                        format: Engine.screenshotFormat)
         guard let body = try? JSONEncoder().encode(req) else { return }
         screenshotPasses += 1
         inFlight = true

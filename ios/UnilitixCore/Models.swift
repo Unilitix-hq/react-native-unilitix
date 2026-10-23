@@ -1,4 +1,4 @@
-// VENDORED from UnilitixCore 0.3.0 (Models.swift) by scripts/sync-ios-core.sh.
+// VENDORED from UnilitixCore 0.3.1 (Models.swift) by scripts/sync-ios-core.sh.
 // Do not edit here; change UnilitixCore and re-run the script.
 
 import Foundation
@@ -157,6 +157,8 @@ struct ScreenshotInitRequest: Encodable {
     var sessionId: String
     var count: Int
     var ordinals: [Int]
+    /// "jpeg" for iOS frames; the API defaults to webp when absent.
+    var format: String
 }
 
 /// `ScreenshotInitResponse` in openapi.sdk.json.

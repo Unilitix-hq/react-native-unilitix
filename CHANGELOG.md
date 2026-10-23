@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.4.1] - 2026-10-23
+
+### Fixed
+- iOS replay frames are uploaded as JPEG (`image/jpeg`, stored as `.jpg`)
+  instead of being labelled `image/webp`. Embeds UnilitixCore 0.3.1.
+
 ## [1.4.0] - 2026-10-18
 
 ### Added
