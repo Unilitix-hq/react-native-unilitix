@@ -83,8 +83,7 @@ export interface UnilitixConfig {
   maskInputsInScreenshots?: boolean;
   /**
    * Mask every text view in replay (balances, names, OTPs are usually plain
-   * text). Default: true. Not yet honoured by unilitix-android < 1.5; sent
-   * so an upgrade of the library picks it up without a JS change.
+   * text). Default: true. Opt a view out with the native unmask API.
    */
   maskAllText?: boolean;
   /** Black out image views in replay. Default: false */
@@ -105,7 +104,7 @@ export interface UnilitixConfig {
   // Advanced tuning — defaults are suitable for most apps
   /** Snapshot capture interval in ms. Default: 1000 */
   snapshotIntervalMs?: number;
-  /** Max snapshots stored per session. Default: 200 */
+  /** Max snapshots stored per session. Default: 1500 */
   maxSnapshotsPerSession?: number;
   /** Screenshot capture interval in ms. Default: 1000 */
   screenshotIntervalMs?: number;
@@ -113,16 +112,15 @@ export interface UnilitixConfig {
   screenshotQuality?: number;
   /** Max screenshot width in px (downscaled). Default: 480 */
   screenshotMaxWidth?: number;
-  /** Max screenshots stored per session. Default: 300 */
+  /** Max screenshots stored per session. Default: 1500 */
   maxScreenshotsPerSession?: number;
   /**
-   * Max screenshots per rolling minute (iOS; Android ignores it for now).
-   * Default: 20
+   * Max screenshots per rolling minute. Default: 20
    */
   maxScreenshotsPerMinute?: number;
   /**
    * Capture a frame this often (ms) even when the screen does not change,
-   * so a replay never looks frozen (iOS; Android ignores it). 0 turns it off.
+   * so a replay never looks frozen. 0 turns it off.
    * Default: 10000
    */
   screenshotHeartbeatMs?: number;
@@ -228,11 +226,11 @@ function buildInitOptions(apiKey: string, config?: UnilitixConfig) {
     uploadScreenshotsOnWifiOnly: config?.uploadScreenshotsOnWifiOnly ?? true,
     sampleRate: config?.replaySampleRate ?? config?.sampleRate ?? 1.0,
     snapshotIntervalMs: config?.snapshotIntervalMs ?? 1000,
-    maxSnapshotsPerSession: config?.maxSnapshotsPerSession ?? 200,
+    maxSnapshotsPerSession: config?.maxSnapshotsPerSession ?? 1500,
     screenshotIntervalMs: config?.screenshotIntervalMs ?? 1000,
     screenshotQuality: config?.screenshotQuality ?? 30,
     screenshotMaxWidth: config?.screenshotMaxWidth ?? 480,
-    maxScreenshotsPerSession: config?.maxScreenshotsPerSession ?? 300,
+    maxScreenshotsPerSession: config?.maxScreenshotsPerSession ?? 1500,
     maxScreenshotsPerMinute: config?.maxScreenshotsPerMinute ?? 20,
     screenshotHeartbeatMs: config?.screenshotHeartbeatMs ?? 10000,
   };

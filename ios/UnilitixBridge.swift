@@ -11,7 +11,7 @@ public final class UnilitixBridge: NSObject {
 
     /// This package's version; must match package.json (checked by
     /// src/__tests__/ios.test.tsx).
-    static let packageVersion = "1.4.1"
+    static let packageVersion = "1.5.0"
 
     private static let lock = NSLock()
     private static var engine: Engine?

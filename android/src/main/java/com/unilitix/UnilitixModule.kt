@@ -77,9 +77,16 @@ class UnilitixModule(
         if (options.hasKey("maskInputsInScreenshots"))
           maskInputsInScreenshots =
             options.getBoolean("maskInputsInScreenshots")
-        // maskAllText, maskImages, maxScreenshotsPerMinute and
-        // screenshotHeartbeatMs are honoured on iOS; they are applied here
-        // once unilitix-android exposes them.
+        if (options.hasKey("maskAllText"))
+          maskAllText = options.getBoolean("maskAllText")
+        if (options.hasKey("maskImages"))
+          maskImages = options.getBoolean("maskImages")
+        if (options.hasKey("maxScreenshotsPerMinute"))
+          maxScreenshotsPerMinute =
+            options.getInt("maxScreenshotsPerMinute")
+        if (options.hasKey("screenshotHeartbeatMs"))
+          screenshotHeartbeatMs =
+            options.getDouble("screenshotHeartbeatMs").toLong()
         if (options.hasKey("captureSnapshots"))
           captureSnapshots =
             options.getBoolean("captureSnapshots")
