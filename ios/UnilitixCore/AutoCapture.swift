@@ -1,4 +1,4 @@
-// VENDORED from UnilitixCore 0.3.0 (AutoCapture.swift) by scripts/sync-ios-core.sh.
+// VENDORED from UnilitixCore 0.3.1 (AutoCapture.swift) by scripts/sync-ios-core.sh.
 // Do not edit here; change UnilitixCore and re-run the script.
 
 #if canImport(UIKit) && os(iOS)
