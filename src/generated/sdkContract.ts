@@ -56,7 +56,7 @@ export const SdkContract = {
     maxScreenshotsPerMinute: 20,
     screenshotHeartbeatMs: 10000,
   },
-  divergences: ["maxScreenshotsPerSession", "maxSnapshotsPerSession"],
+  divergences: [],
   /** Fingerprint conformance cases (JVM and Hermes stacks). */
   fingerprintVectors: [
     { name: "no stack", exceptionType: "StateError", stack: null, fingerprint: "784c89e082adf0f1" },

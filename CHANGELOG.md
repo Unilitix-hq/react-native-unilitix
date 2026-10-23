@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.5.0] - 2026-10-23
+
+### Added
+- **Android replay parity.** `maskAllText` (default on), `maskImages`,
+  `maxScreenshotsPerMinute` (20) and `screenshotHeartbeatMs` (10000) now
+  apply on Android too. Requires unilitix-android 1.6.0 (bumped here), which
+  also brings contract retry (Retry-After clamped, 401/403 pause uploads) and
+  crash dedup (3 per fingerprint, 50 per session).
+
+### Changed
+- `maxSnapshotsPerSession` and `maxScreenshotsPerSession` default to 1500 on
+  both platforms (were 200 and 300). Android replays now mask all text by
+  default, so they look more masked after upgrading.
+
 ## [1.4.1] - 2026-10-23
 
 ### Fixed
