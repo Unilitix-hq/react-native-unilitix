@@ -11,7 +11,7 @@ public final class UnilitixBridge: NSObject {
 
     /// This package's version; must match package.json (checked by
     /// src/__tests__/ios.test.tsx).
-    static let packageVersion = "1.5.0"
+    static let packageVersion = "1.5.1"
 
     private static let lock = NSLock()
     private static var engine: Engine?
@@ -53,6 +53,9 @@ public final class UnilitixBridge: NSObject {
         if let v = options["maskAllText"] as? Bool { config.maskAllText = v }
         if let v = options["maskImages"] as? Bool { config.maskImages = v }
         if let v = options["maskInputsInScreenshots"] as? Bool { config.maskInputsInScreenshots = v }
+        if let v = options["captureSnapshots"] as? Bool { config.captureSnapshots = v }
+        if let v = options["snapshotIntervalMs"] as? Int { config.snapshotIntervalMs = v }
+        if let v = options["maxSnapshotsPerSession"] as? Int { config.maxSnapshotsPerSession = v }
         let consent = (options["consent"] as? String).flatMap(UnilitixConsent.init(rawValue:)) ?? .granted
 
         let debug = config.debug
@@ -64,6 +67,7 @@ public final class UnilitixBridge: NSObject {
             device: DeviceInfo.current(),
             consent: consent,
             screenshots: ScreenshotStore(directory: ScreenshotStore.defaultDirectory),
+            snapshots: SnapshotStore(directory: SnapshotStore.defaultDirectory),
             reachability: PathReachability(),
             log: { if debug { NSLog("[Unilitix] %@", $0) } })
         engine = e
@@ -77,11 +81,13 @@ public final class UnilitixBridge: NSObject {
         e.queue.async { e.start() }
         let taps = config.autoTrackTaps
         let replay = config.captureScreenshots
-        if taps || replay {
+        let snapshots = config.captureSnapshots
+        if taps || replay || snapshots {
             let replayConfig = config
             DispatchQueue.main.async {
-                AutoCapture.install(e, screens: false, taps: taps, replay: replay)
+                AutoCapture.install(e, screens: false, taps: taps, replay: replay, snapshots: snapshots)
                 if replay { ScreenshotCapture.install(e, config: replayConfig) }
+                if snapshots { SnapshotCapture.install(e, config: replayConfig) }
             }
         }
 

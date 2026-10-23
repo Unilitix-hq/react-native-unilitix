@@ -1,14 +1,10 @@
-// VENDORED from UnilitixCore 0.3.1 (Config.swift) by scripts/sync-ios-core.sh.
+// VENDORED from UnilitixCore 0.4.0 (Config.swift) by scripts/sync-ios-core.sh.
 // Do not edit here; change UnilitixCore and re-run the script.
 
 import Foundation
 
 /// SDK configuration. Every default is the shared SDK contract's
 /// (`SdkContract.defaults`); `SdkContractTests` fails if one drifts.
-///
-/// Wireframe snapshots (`captureSnapshots`, `snapshotIntervalMs`,
-/// `maxSnapshotsPerSession`) are not implemented on iOS yet and stay listed
-/// as iOS divergences in the contract.
 public struct UnilitixConfig {
     /// Ingest API base URL.
     public var apiUrl: String = "https://api.unilitix.com"
@@ -58,8 +54,9 @@ public struct UnilitixConfig {
     /// Hold screenshots on the device until it is on Wi-Fi (or wired, and
     /// not a personal hotspot or Low Data Mode). Events are never held.
     public var uploadScreenshotsOnWifiOnly: Bool = true
-    /// Fraction of sessions (0–1) that capture screenshots, decided once per
-    /// session. Events are always captured.
+    /// Fraction of sessions (0–1) that capture replay (screenshots and
+    /// view-tree snapshots), decided once per session. Events are always
+    /// captured.
     public var replaySampleRate: Double = 1.0
     /// Black out text inputs (`UITextField`, `UITextView` and their
     /// subclasses, including secure entry) in screenshots. Applies even
@@ -74,8 +71,24 @@ public struct UnilitixConfig {
     public var maskImages: Bool = false
     /// Master switch for masking in screenshots (Flutter's
     /// `maskScreenshots`). When false, only views marked `unilitixPrivate`
-    /// are masked; `maskInputs`, `maskAllText` and `maskImages` are ignored.
+    /// are masked in screenshots; `maskInputs`, `maskAllText` and
+    /// `maskImages` are ignored there. View-tree snapshots keep applying them.
     public var maskInputsInScreenshots: Bool = true
+
+    // MARK: Session replay (view-tree snapshots)
+
+    /// Capture view-tree snapshots of the key window for replay: each
+    /// visible view's type, frame (in points) and colours, with text masked
+    /// by the same rules as screenshots (`maskInputs`, `maskAllText`,
+    /// `maskImages`, `unilitixUnmasked`, `unilitixPrivate`). Sampled with
+    /// `replaySampleRate` together with screenshots.
+    public var captureSnapshots: Bool = true
+    /// Minimum gap between two snapshots, in milliseconds; clamped to
+    /// 1000–60000. The tree is walked at most this often, and a snapshot is
+    /// kept only when it differs from the previous one.
+    public var snapshotIntervalMs: Int = 1000
+    /// Stop capturing snapshots after this many in one session.
+    public var maxSnapshotsPerSession: Int = 1500
 
     public init() {}
 }

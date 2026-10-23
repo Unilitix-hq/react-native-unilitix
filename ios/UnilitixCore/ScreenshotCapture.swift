@@ -1,4 +1,4 @@
-// VENDORED from UnilitixCore 0.3.1 (ScreenshotCapture.swift) by scripts/sync-ios-core.sh.
+// VENDORED from UnilitixCore 0.4.0 (ScreenshotCapture.swift) by scripts/sync-ios-core.sh.
 // Do not edit here; change UnilitixCore and re-run the script.
 
 #if canImport(UIKit) && os(iOS)
@@ -44,7 +44,7 @@ enum ScreenshotCapture {
         maxWidth = CGFloat(max(16, config.screenshotMaxWidth))
         quality = CGFloat(min(max(config.screenshotQuality, 1), 100)) / 100
         if ticker == nil {
-            let t = ReplayTicker()
+            let t = ReplayTicker { ScreenshotCapture.tick() }
             t.start(interval: tickInterval)
             ticker = t
         }
@@ -113,7 +113,8 @@ enum ScreenshotCapture {
 
     /// The app's key window in a foreground scene. Nil while the key window
     /// is a system window (keyboard, text effects): such frames are skipped.
-    private static func captureWindow() -> UIWindow? {
+    /// Also used by `SnapshotCapture`.
+    static func captureWindow() -> UIWindow? {
         let windows = UIApplication.shared.connectedScenes
             .compactMap { $0 as? UIWindowScene }
             .filter { $0.activationState == .foregroundActive }
@@ -125,10 +126,16 @@ enum ScreenshotCapture {
     }
 }
 
-/// Fires `ScreenshotCapture.tick` on the main run loop, also while scrolling.
+/// Fires a replay capturer's tick on the main run loop, also while scrolling.
 @MainActor
-private final class ReplayTicker: NSObject {
+final class ReplayTicker: NSObject {
     private var timer: Timer?
+    private let onFire: @MainActor () -> Void
+
+    init(_ onFire: @escaping @MainActor () -> Void) {
+        self.onFire = onFire
+        super.init()
+    }
 
     func start(interval: TimeInterval) {
         let t = Timer(timeInterval: interval, target: self, selector: #selector(fire), userInfo: nil, repeats: true)
@@ -138,23 +145,7 @@ private final class ReplayTicker: NSObject {
     }
 
     @objc private func fire() {
-        ScreenshotCapture.tick()
-    }
-}
-
-/// Which views are blacked out, from the config.
-struct MaskRules {
-    var inputs = true
-    var allText = true
-    var images = false
-
-    init() {}
-
-    init(config: UnilitixConfig) {
-        let on = config.maskInputsInScreenshots
-        inputs = on && config.maskInputs
-        allText = on && config.maskAllText
-        images = on && config.maskImages
+        onFire()
     }
 }
 
@@ -179,18 +170,11 @@ struct MaskRules {
 /// Hidden and fully transparent views are skipped with their subviews: they
 /// are not drawn. Returns nil, so no frame is taken, while a secure text
 /// field is being edited.
+///
+/// The rules themselves are `ReplayMasking.masksInScreenshot`, shared with
+/// view-tree snapshots; `classify` is shared too.
 @MainActor
 enum ScreenMasker {
-    private enum Kind {
-        case input
-        case secureInput
-        case text
-        case web
-        case swiftUIHost
-        case image
-        case other
-    }
-
     static func masks(in window: UIWindow, rules: MaskRules) -> [CGRect]? {
         var out: [CGRect] = []
         guard visit(window, window: window, unmasked: false, rules: rules, into: &out) else { return nil }
@@ -204,33 +188,10 @@ enum ScreenMasker {
         let unmasked = inherited || view.unilitixUnmasked
         let kind = classify(view)
         if kind == .secureInput && view.isFirstResponder { return false }
-        if view.unilitixPrivate {
+        if ReplayMasking.masksInScreenshot(kind: kind, isPrivate: view.unilitixPrivate,
+                                           unmasked: unmasked, rules: rules) {
             add(view, window, &out)
             return true
-        }
-        switch kind {
-        case .input, .secureInput:
-            if rules.inputs {
-                add(view, window, &out)
-                return true
-            }
-        case .text, .swiftUIHost:
-            if rules.allText && !unmasked {
-                add(view, window, &out)
-                return true
-            }
-        case .web:
-            if (rules.allText || rules.inputs) && !unmasked {
-                add(view, window, &out)
-                return true
-            }
-        case .image:
-            if rules.images && !unmasked {
-                add(view, window, &out)
-                return true
-            }
-        case .other:
-            break
         }
         for sub in view.subviews {
             if !visit(sub, window: window, unmasked: unmasked, rules: rules, into: &out) { return false }
@@ -238,7 +199,8 @@ enum ScreenMasker {
         return true
     }
 
-    private static func classify(_ view: UIView) -> Kind {
+    /// What `view` is for masking. Also used by `SnapshotCapture`.
+    static func classify(_ view: UIView) -> ReplayNodeKind {
         if let field = view as? UITextField {
             return field.isSecureTextEntry ? .secureInput : .input
         }

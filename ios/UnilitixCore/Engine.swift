@@ -1,4 +1,4 @@
-// VENDORED from UnilitixCore 0.3.1 (Engine.swift) by scripts/sync-ios-core.sh.
+// VENDORED from UnilitixCore 0.4.0 (Engine.swift) by scripts/sync-ios-core.sh.
 // Do not edit here; change UnilitixCore and re-run the script.
 
 import Foundation
@@ -9,6 +9,7 @@ final class Engine {
     let config: UnilitixConfig
     let store: EventStore
     let screenshots: ScreenshotStore
+    let snapshots: SnapshotStore
     let breadcrumbs = Breadcrumbs()
     let queue = DispatchQueue(label: "io.unilitix.engine", qos: .utility)
 
@@ -39,12 +40,16 @@ final class Engine {
     private var seenFingerprints: [String: Int] = [:]
     private var errorReports = 0
 
-    // Session replay. `replaySampled` and `screenshotCount` belong to the
-    // current session; the gate is what the main-thread capturer reads.
+    // Session replay. `replaySampled`, `screenshotCount` and `snapshotCount`
+    // belong to the current session; the gates are what the main-thread
+    // capturers read. One sampling decision covers screenshots and snapshots.
     private var replaySampled = false
     private var screenshotCount = 0
+    private var snapshotCount = 0
     private let replayLock = NSLock()
     private var gate: ReplayGate?
+    private var snapGate: ReplayGate?
+    private var snapshotPasses = 0
     // Storage PUT failures back off separately: a storage outage must not
     // hold back events.
     private var screenshotFailures = 0
@@ -60,6 +65,10 @@ final class Engine {
     /// type (0.3.0 sent JPEG bytes labelled image/webp).
     static let screenshotFormat = "jpeg"
     static let screenshotContentType = "image/jpeg"
+    /// Snapshots per `/v1/ingest/snapshots` request (Android's chunk size).
+    static let snapshotsPerRequest = 20
+    /// Snapshot requests chained in one flush cycle while each one succeeds.
+    static let maxSnapshotPassesPerCycle = 10
 
     /// Read by the crash handler without going through `queue`.
     private let sessionLock = NSLock()
@@ -68,6 +77,7 @@ final class Engine {
     init(config: UnilitixConfig, transport: Transport, store: EventStore,
          prefs: Preferences, device: DeviceInfo, consent: UnilitixConsent,
          screenshots: ScreenshotStore = ScreenshotStore(directory: nil),
+         snapshots: SnapshotStore = SnapshotStore(directory: nil),
          reachability: Reachability = PathReachability(),
          random: @escaping () -> Double = { Double.random(in: 0..<1) },
          now: @escaping () -> Date = Date.init,
@@ -76,6 +86,7 @@ final class Engine {
         self.transport = transport
         self.store = store
         self.screenshots = screenshots
+        self.snapshots = snapshots
         self.prefs = prefs
         self.device = device
         self.reachability = reachability
@@ -135,14 +146,16 @@ final class Engine {
         seenFingerprints = [:]
         errorReports = 0
         screenshotCount = 0
-        replaySampled = config.captureScreenshots
+        snapshotCount = 0
+        replaySampled = (config.captureScreenshots || config.captureSnapshots)
             && ReplaySampling.isSampled(rate: config.replaySampleRate, roll: random())
         breadcrumbs.clear()
         sessionLock.lock(); crashSessionId = info.id; sessionLock.unlock()
         store.upsertSession(info)
         emit(IngestEvent(type: "SESSION_START", screen: screen, at: t))
         publishReplayGate()
-        log("session \(info.id) started\(config.captureScreenshots && !replaySampled ? " (replay not sampled)" : "")")
+        let replayOn = config.captureScreenshots || config.captureSnapshots
+        log("session \(info.id) started\(replayOn && !replaySampled ? " (replay not sampled)" : "")")
     }
 
     /// Ends the current session and uploads it; the next event starts a new one.
@@ -285,13 +298,49 @@ final class Engine {
         return gate
     }
 
+    /// The session and screen a new view-tree snapshot belongs to, or nil
+    /// when none is wanted (snapshots off, session not sampled, consent
+    /// denied, or the session's cap reached). Safe to call from any thread.
+    func snapshotGate() -> ReplayGate? {
+        replayLock.lock(); defer { replayLock.unlock() }
+        return snapGate
+    }
+
     private func publishReplayGate() {
         var g: ReplayGate?
-        if config.captureScreenshots, consent != .denied, replaySampled, let s = session,
-           screenshotCount < config.maxScreenshotsPerSession {
-            g = ReplayGate(sessionId: s.id, screen: screen)
+        var sg: ReplayGate?
+        if consent != .denied, replaySampled, let s = session {
+            if config.captureScreenshots, screenshotCount < config.maxScreenshotsPerSession {
+                g = ReplayGate(sessionId: s.id, screen: screen)
+            }
+            if config.captureSnapshots, snapshotCount < config.maxSnapshotsPerSession {
+                sg = ReplayGate(sessionId: s.id, screen: screen)
+            }
         }
-        replayLock.lock(); gate = g; replayLock.unlock()
+        replayLock.lock(); gate = g; snapGate = sg; replayLock.unlock()
+    }
+
+    /// A masked view tree from the capturer. Assigns the next snapshot
+    /// ordinal of the session it was captured in, or drops it (returning nil)
+    /// when that session has ended, is not sampled, or reached
+    /// `maxSnapshotsPerSession`.
+    @discardableResult
+    func addSnapshot(_ hierarchy: SnapshotNode, sessionId: String, screen snapScreen: String, capturedAt: Date,
+                     viewportWidth: Int, viewportHeight: Int) -> Int? {
+        guard config.captureSnapshots, consent != .denied, replaySampled,
+              let s = session, s.id == sessionId,
+              snapshotCount < config.maxSnapshotsPerSession else { return nil }
+        let ordinal = snapshotCount
+        snapshotCount += 1
+        let snap = PendingSnapshot(sessionId: sessionId, ordinal: ordinal, screenName: snapScreen,
+                                   capturedAt: capturedAt, viewportWidth: viewportWidth,
+                                   viewportHeight: viewportHeight, hierarchy: hierarchy)
+        if !snapshots.add(snap) { log("snapshot \(ordinal) could not be stored") }
+        if snapshotCount >= config.maxSnapshotsPerSession {
+            log("snapshot cap (\(config.maxSnapshotsPerSession)) reached for this session")
+            publishReplayGate()
+        }
+        return ordinal
     }
 
     /// A masked, encoded frame from the capturer. Assigns the next ordinal of
@@ -341,6 +390,7 @@ final class Engine {
         case .denied:
             store.purge()
             screenshots.purge()
+            snapshots.purge()
             session = nil
             sessionLock.lock(); crashSessionId = nil; sessionLock.unlock()
         case .granted:
@@ -365,9 +415,10 @@ final class Engine {
         guard consent == .granted, !authRejected, !inFlight else { return }
         if let until = backoffUntil, now() < until { return }
         screenshotPasses = 0
+        snapshotPasses = 0
         touchSession()
         guard let batch = store.nextBatch(limit: config.flushBatchSize) else {
-            uploadScreenshots()
+            uploadSnapshots()
             return
         }
 
@@ -404,7 +455,7 @@ final class Engine {
             if store.nextBatch(limit: 1) != nil, store.eventCount >= config.flushBatchSize {
                 flush()
             } else {
-                uploadScreenshots()
+                uploadSnapshots()
             }
         case .retry, .authFailure:
             break
@@ -459,6 +510,68 @@ final class Engine {
             crashed: s.crashed,
             events: events)
         return try? JSONEncoder().encode(req)
+    }
+
+    // MARK: Snapshot upload
+    //
+    // After the events: up to `snapshotsPerRequest` snapshots of the oldest
+    // session per `POST /v1/ingest/snapshots`, chained while each request
+    // succeeds, then the screenshots. Same rules as events (RetryPolicy):
+    // consent granted, the shared backoff and auth latch, and any other 4xx
+    // drops what was sent. Snapshots are small JSON, so they are not held
+    // for Wi-Fi.
+
+    func uploadSnapshots() {
+        guard consent == .granted, !authRejected, !inFlight else { return }
+        if let until = backoffUntil, now() < until { return }
+        guard snapshotPasses < Engine.maxSnapshotPassesPerCycle,
+              let next = snapshots.nextUpload(limit: Engine.snapshotsPerRequest) else {
+            uploadScreenshots()
+            return
+        }
+        var sent = next.snapshots
+        var body = encodeSnapshots(next.sessionId, sent)
+        while let b = body, b.count > SdkContract.maxRequestBytes, sent.count > 1 {
+            sent = Array(sent.prefix(sent.count / 2))
+            body = encodeSnapshots(next.sessionId, sent)
+        }
+        guard let data = body else {
+            snapshots.remove(sent)  // cannot be encoded; never will be
+            uploadScreenshots()
+            return
+        }
+        if data.count > SdkContract.maxRequestBytes {
+            log("snapshot \(sent[0].ordinal) is larger than the API accepts; dropped")
+            snapshots.remove(sent)
+            uploadSnapshots()
+            return
+        }
+        snapshotPasses += 1
+        inFlight = true
+        let batch = sent
+        transport.post("/v1/ingest/snapshots", body: data) { [weak self] status, headers in
+            self?.queue.async { self?.handleSnapshots(status: status, headers: headers, sent: batch) }
+        }
+    }
+
+    private func encodeSnapshots(_ sessionId: String, _ items: [PendingSnapshot]) -> Data? {
+        try? JSONEncoder().encode(IngestSnapshotsRequest(sessionId: sessionId,
+                                                         snapshots: items.map(SnapshotPayload.init)))
+    }
+
+    private func handleSnapshots(status: Int?, headers: [String: String], sent: [PendingSnapshot]) {
+        inFlight = false
+        switch note(status: status, headers: headers, what: "snapshot upload") {
+        case .accepted:
+            snapshots.remove(sent)
+            uploadSnapshots()
+        case .rejected:
+            log("snapshots rejected by the API (\(status ?? 0)); \(sent.count) dropped")
+            snapshots.remove(sent)
+            uploadSnapshots()
+        case .retry, .authFailure:
+            break  // kept for the next flush
+        }
     }
 
     // MARK: Screenshot upload
