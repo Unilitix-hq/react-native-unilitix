@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.7.1] - 2026-10-24
+
+### Changed
+- **Exact symbolication for native crashes.** Embeds UnilitixCore 0.7.0:
+  iOS uncaught exceptions carry the `debugImages` of their stack, and signal
+  crashes (SIGSEGV, SIGABRT, …) now carry a real backtrace of the crashed
+  thread with its images, where before they had no stack. Upload dSYMs with
+  `unilitix-cli` to get function, file and line.
+- Android uses unilitix-android 1.10.0: NDK crash frames carry each
+  library's GNU build ID and relative pc (signal handler on Android 5-10,
+  tombstones on 11+). Upload the unstripped `.so` files with `unilitix-cli`.
+
 ## [1.7.0] - 2026-10-24
 
 ### Added
