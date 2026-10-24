@@ -3,8 +3,8 @@
 
 /** The Unilitix SDK contract (see sdk-contract.md in the api repo). */
 export const SdkContract = {
-  version: "1.2.0",
-  eventTypes: ["SESSION_START", "TAP", "RAGE_TAP", "SCROLL", "NAVIGATE", "CUSTOM", "EXCEPTION", "CRASH"],
+  version: "1.3.0",
+  eventTypes: ["SESSION_START", "TAP", "RAGE_TAP", "SCROLL", "NAVIGATE", "CUSTOM", "EXCEPTION", "CRASH", "ANR"],
   eventTypeAliases: { "NAV": "NAVIGATE" },
   networkTypes: ["WIFI", "4G", "3G", "2G"],
   consentStates: ["granted", "pending", "denied"],
@@ -64,6 +64,8 @@ export const SdkContract = {
     { name: "jvm native method", exceptionType: "java.lang.reflect.InvocationTargetException", stack: "\tat java.lang.reflect.Method.invoke(Native Method)\n\tat com.a.B.c(B.java:1)", fingerprint: "8ca3b8f5c4b62b3e" },
     { name: "hermes", exceptionType: "TypeError", stack: "TypeError: undefined is not an object (evaluating 'cart.items')\n    at checkout (address at index.android.bundle:1:234567)\n    at onPress (address at index.android.bundle:1:198765)\n    at anonymous (index.android.bundle:1:5)\n    at call (native)", fingerprint: "a3ad739a097ccbc5" },
     { name: "js bare frame", exceptionType: "Error", stack: "Error: boom\n    at index.android.bundle:1:2345\n    at foo (a.js:3:4)", fingerprint: "f7219531df83342a" },
+    { name: "android anr main thread", exceptionType: "ANR", stack: "\"main\" prio=5 tid=1 Native\n  native: #00 pc 000000000009a1b8  /apex/com.android.runtime/lib64/bionic/libc.so (read+8)\n  native: #01 pc 0000000000012c34  /system/lib64/libsqlite.so (unixRead+52)\n  at android.database.sqlite.SQLiteConnection.nativeExecuteForCursorWindow(Native method)\n  at android.database.sqlite.SQLiteConnection.executeForCursorWindow(SQLiteConnection.java:1001)\n  - locked <0x0b1c2d3e> (a android.database.sqlite.SQLiteConnection)\n  at com.shop.cart.CartRepository.load(CartRepository.kt:88)\n  at com.shop.ui.CheckoutActivity.onPay(CheckoutActivity.kt:118)", fingerprint: "ff80a5189f547c4d" },
+    { name: "android anr main thread, other device", exceptionType: "ANR", stack: "\"main\" prio=5 tid=1 Native\n  | group=\"main\" sCount=1 ucsCount=0 flags=1 obj=0x72a1b2c8 self=0xb400007a1c2d3e40\n  | sysTid=9120 nice=-10 cgrp=top-app sched=0/0 handle=0x7b9e1f44f8\n  native: #00 pc 00000000000a0c44  /apex/com.android.runtime/lib64/bionic/libc.so (read+4)\n  at android.database.sqlite.SQLiteConnection.nativeExecuteForCursorWindow(Native method)\n  at android.database.sqlite.SQLiteConnection.executeForCursorWindow(SQLiteConnection.java:1012)\n  at com.shop.cart.CartRepository.load(CartRepository.kt:91)", fingerprint: "ff80a5189f547c4d" },
     { name: "non-ascii", exceptionType: "Ошибка", stack: "#0      Café.naïve (package:é/ü.dart:1:2)", fingerprint: "64b3189790c14476" },
   ],
 } as const;

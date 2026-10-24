@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.6.2] - 2026-10-24
+
+### Added
+- **App-not-responding (ANR) reports on Android 11+.** Requires
+  unilitix-android 1.9.0 (bumped here): when the app froze and the system
+  killed it, the next launch reports an ANR with the main thread's stack.
+  ANRs are their own issue type in the dashboard and do not mark the session
+  crashed.
+- **Jetpack Compose masking** comes with unilitix-android 1.8.0+ (only
+  relevant to apps that mix native Compose screens into a React Native app).
+
+### Changed
+- SDK contract 1.3.0 (adds the `ANR` event type).
+
 ## [1.6.1] - 2026-10-24
 
 ### Added
