@@ -11,7 +11,7 @@ public final class UnilitixBridge: NSObject {
 
     /// This package's version; must match package.json (checked by
     /// src/__tests__/ios.test.tsx).
-    static let packageVersion = "1.5.1"
+    static let packageVersion = "1.6.0"
 
     private static let lock = NSLock()
     private static var engine: Engine?
@@ -59,6 +59,10 @@ public final class UnilitixBridge: NSObject {
         let consent = (options["consent"] as? String).flatMap(UnilitixConsent.init(rawValue:)) ?? .granted
 
         let debug = config.debug
+        // A fatal signal is recorded here by the dying process and reported
+        // by the engine on the next launch (read at init, before the handlers
+        // below are installed).
+        let crashFile = CrashFile.enginePath
         let e = Engine(
             config: config,
             transport: URLSessionTransport(baseURL: config.apiUrl, apiKey: apiKey),
@@ -69,14 +73,19 @@ public final class UnilitixBridge: NSObject {
             screenshots: ScreenshotStore(directory: ScreenshotStore.defaultDirectory),
             snapshots: SnapshotStore(directory: SnapshotStore.defaultDirectory),
             reachability: PathReachability(),
+            crashFilePath: crashFile,
             log: { if debug { NSLog("[Unilitix] %@", $0) } })
         engine = e
 
         if config.autoTrackCrashes {
             // A fatal JS error is reported by the JS handler; React Native then
-            // raises RCTFatalException, which must not be reported twice.
+            // raises RCTFatalException, which must not be reported twice. The
+            // SIGABRT that follows any uncaught exception, ignored or not, is
+            // not recorded either (CrashReporter marks it handled).
             CrashReporter.ignoredNamePrefixes = ["RCTFatalException"]
             CrashReporter.install(e)
+            // Fatal signals (SIGSEGV, SIGBUS, SIGABRT, ...) in native code.
+            CrashFile.installSignalHandlers(path: crashFile)
         }
         e.queue.async { e.start() }
         let taps = config.autoTrackTaps

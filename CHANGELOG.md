@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.6.0] - 2026-10-24
+
+### Added
+- **Native crashes from fatal signals on iOS** (SIGSEGV, SIGBUS, SIGABRT,
+  SIGILL, SIGFPE, SIGTRAP), with `autoTrackCrashes`. Embeds UnilitixCore
+  0.5.0: the dying process records the signal, and on the next launch it is
+  reported as a fatal `CRASH` (`exceptionType` `SIGNAL`, message such as
+  `Fatal signal 11 (SIGSEGV)`) against the session that crashed, which is
+  marked crashed. Consent `pending` holds it; `denied` drops it.
+
+### Fixed
+- A fatal JS error is reported once: the `RCTFatalException` React Native
+  raises afterwards was already ignored, and now the SIGABRT that ends the
+  process is not reported either. The same holds for any uncaught
+  Objective-C exception.
+
 ## [1.5.1] - 2026-10-23
 
 ### Added

@@ -80,6 +80,13 @@ has run — no extra wiring:
   own handler runs, so a fatal error still reaches the dashboard.
 - An unhandled promise rejection is reported as a non-fatal `EXCEPTION`
   (Hermes; on JSC use `captureException` in your `.catch`).
+- On iOS, an uncaught Objective-C exception is reported as a `CRASH` with
+  its stack, and a fatal signal in native code (SIGSEGV, SIGBUS, SIGABRT,
+  SIGILL, SIGFPE, SIGTRAP) is reported on the next launch against the
+  session that crashed (`exceptionType` `SIGNAL`, e.g.
+  `Fatal signal 11 (SIGSEGV)`). A fatal JS error is reported once: the
+  native exception and abort React Native raise after it are not reported
+  again.
 - Every report carries a stable fingerprint so one bug is counted once
   across devices.
 
