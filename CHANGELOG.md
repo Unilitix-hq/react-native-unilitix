@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.6.1] - 2026-10-24
+
+### Added
+- **Native (NDK) crashes on Android.** Requires unilitix-android 1.7.0
+  (bumped here): crashes in native code (C/C++ libraries, React Native's
+  own native modules, Hermes) are reported on the next launch as a CRASH on
+  the session that crashed, with the same fingerprint as iOS. Android 11+
+  reads the system's exit history; Android 8–10 uses a small signal handler
+  (~10 KB per ABI). A fatal JS error already reported from JS suppresses the
+  abort that may follow, so it is not reported twice.
+
 ## [1.6.0] - 2026-10-24
 
 ### Added
