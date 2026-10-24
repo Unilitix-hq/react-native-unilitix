@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.7.0] - 2026-10-24
+
+### Added
+- **App hangs on iOS** are reported as `ANR` issues (embeds UnilitixCore
+  0.6.0): when the main thread is blocked for `appHangTimeoutMs` (default
+  2000 ms, 0 turns it off) the main thread's stack is captured; the event is
+  sent when the app recovers, or on the next launch if the app was killed
+  during the hang. Sessions are not marked crashed. Requires
+  `autoTrackCrashes`. A stuck JS thread is not a main-thread hang.
+- iOS hang events include `debugImages` (image UUIDs and load addresses), so
+  uploaded dSYMs symbolicate their stacks exactly.
+
 ## [1.6.2] - 2026-10-24
 
 ### Added

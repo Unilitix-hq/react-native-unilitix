@@ -50,6 +50,13 @@ export interface UnilitixConfig {
    */
   autoTrackCrashes?: boolean;
   /**
+   * iOS: report the app as not responding (an `ANR` issue) when the main
+   * thread is blocked for this long. 0 turns it off. Requires
+   * `autoTrackCrashes`. Android reports ANRs from the system (Android 11+).
+   * @default 2000
+   */
+  appHangTimeoutMs?: number;
+  /**
    * Install the JS error and unhandled-promise-rejection handlers during
    * `init()`. Set false to call `setupUnilitixCrashHandler()` yourself.
    * @default true
@@ -211,6 +218,9 @@ function buildInitOptions(apiKey: string, config?: UnilitixConfig) {
     autoTrackScreens: config?.autoTrackScreens ?? true,
     autoTrackTaps: config?.autoTrackTaps ?? true,
     autoTrackCrashes: config?.autoTrackCrashes ?? true,
+    ...(config?.appHangTimeoutMs !== undefined
+      ? { appHangTimeoutMs: config.appHangTimeoutMs }
+      : {}),
     autoTrackRageTaps: config?.autoTrackRageTaps ?? true,
     flushIntervalSeconds: config?.flushIntervalSeconds ?? 30,
     flushBatchSize: config?.flushBatchSize ?? 100,

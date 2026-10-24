@@ -11,7 +11,7 @@ public final class UnilitixBridge: NSObject {
 
     /// This package's version; must match package.json (checked by
     /// src/__tests__/ios.test.tsx).
-    static let packageVersion = "1.6.2"
+    static let packageVersion = "1.7.0"
 
     private static let lock = NSLock()
     private static var engine: Engine?
@@ -56,6 +56,7 @@ public final class UnilitixBridge: NSObject {
         if let v = options["captureSnapshots"] as? Bool { config.captureSnapshots = v }
         if let v = options["snapshotIntervalMs"] as? Int { config.snapshotIntervalMs = v }
         if let v = options["maxSnapshotsPerSession"] as? Int { config.maxSnapshotsPerSession = v }
+        if let v = options["appHangTimeoutMs"] as? Int { config.appHangTimeoutMs = max(0, v) }
         let consent = (options["consent"] as? String).flatMap(UnilitixConsent.init(rawValue:)) ?? .granted
 
         let debug = config.debug
@@ -63,6 +64,8 @@ public final class UnilitixBridge: NSObject {
         // by the engine on the next launch (read at init, before the handlers
         // below are installed).
         let crashFile = CrashFile.enginePath
+        // A hang the app did not survive is reported on the next launch.
+        let hangFile = AppHangFile.enginePath
         let e = Engine(
             config: config,
             transport: URLSessionTransport(baseURL: config.apiUrl, apiKey: apiKey),
@@ -74,6 +77,7 @@ public final class UnilitixBridge: NSObject {
             snapshots: SnapshotStore(directory: SnapshotStore.defaultDirectory),
             reachability: PathReachability(),
             crashFilePath: crashFile,
+            appHangFilePath: hangFile,
             log: { if debug { NSLog("[Unilitix] %@", $0) } })
         engine = e
 
@@ -88,6 +92,11 @@ public final class UnilitixBridge: NSObject {
             CrashFile.installSignalHandlers(path: crashFile)
         }
         e.queue.async { e.start() }
+        if config.autoTrackCrashes && config.appHangTimeoutMs > 0 {
+            // Main-thread watchdog: hangs of appHangTimeoutMs or more become
+            // ANR events. A stuck JS thread is not a main-thread hang.
+            AppHangWatchdog.install(e, timeoutMs: config.appHangTimeoutMs)
+        }
         let taps = config.autoTrackTaps
         let replay = config.captureScreenshots
         let snapshots = config.captureSnapshots
