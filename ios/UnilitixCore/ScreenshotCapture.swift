@@ -1,4 +1,4 @@
-// VENDORED from UnilitixCore 0.4.0 (ScreenshotCapture.swift) by scripts/sync-ios-core.sh.
+// VENDORED from UnilitixCore 0.5.0 (ScreenshotCapture.swift) by scripts/sync-ios-core.sh.
 // Do not edit here; change UnilitixCore and re-run the script.
 
 #if canImport(UIKit) && os(iOS)
@@ -78,7 +78,34 @@ enum ScreenshotCapture {
         guard bounds.width >= 1, bounds.height >= 1 else { return }
         // Nil: a password is being typed, or masking failed. No frame.
         guard let masks = ScreenMasker.masks(in: window, rules: rules) else { return }
+        guard let image = render(window, maxWidth: maxWidth, masks: masks) else { return }
 
+        encoding = true
+        let sessionId = gate.sessionId
+        let screen = gate.screen
+        let capturedAt = Date()
+        let width = Int(bounds.width.rounded())
+        let height = Int(bounds.height.rounded())
+        encode(image, quality: quality) { jpeg in
+            DispatchQueue.main.async { ScreenshotCapture.encoding = false }
+            guard let data = jpeg else { return }
+            e.queue.async {
+                e.addScreenshot(data, sessionId: sessionId, screen: screen, capturedAt: capturedAt,
+                                viewportWidth: width, viewportHeight: height)
+            }
+        }
+    }
+
+    /// Draws `window` at most `maxWidth` pixels wide (never above the
+    /// screen's scale) with `masks`, in window points, painted black in the
+    /// same pass, each grown by a point on every side, so no unmasked image
+    /// is ever kept. Nil when the window has no size or could not be drawn.
+    ///
+    /// Also used by wrappers that find the masks themselves (the Flutter
+    /// plugin gets them from Dart).
+    static func render(_ window: UIWindow, maxWidth: CGFloat, masks: [CGRect]) -> UIImage? {
+        let bounds = window.bounds
+        guard bounds.width >= 1, bounds.height >= 1 else { return nil }
         let format = UIGraphicsImageRendererFormat()
         format.scale = min(window.screen.scale, maxWidth / bounds.width)
         format.opaque = true
@@ -91,23 +118,14 @@ enum ScreenshotCapture {
                 cg.fill(r.insetBy(dx: -1, dy: -1))
             }
         }
-        guard drawn else { return }
+        return drawn ? image : nil
+    }
 
-        encoding = true
-        let q = quality
-        let sessionId = gate.sessionId
-        let screen = gate.screen
-        let capturedAt = Date()
-        let width = Int(bounds.width.rounded())
-        let height = Int(bounds.height.rounded())
+    /// JPEG-encodes `image` at `quality` (0...1) on the replay encode queue
+    /// and calls `completion` there with the bytes, or nil on failure.
+    static func encode(_ image: UIImage, quality: CGFloat, completion: @escaping @Sendable (Data?) -> Void) {
         encodeQueue.async {
-            let jpeg = image.jpegData(compressionQuality: q)
-            DispatchQueue.main.async { ScreenshotCapture.encoding = false }
-            guard let data = jpeg else { return }
-            e.queue.async {
-                e.addScreenshot(data, sessionId: sessionId, screen: screen, capturedAt: capturedAt,
-                                viewportWidth: width, viewportHeight: height)
-            }
+            completion(image.jpegData(compressionQuality: quality))
         }
     }
 

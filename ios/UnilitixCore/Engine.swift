@@ -1,4 +1,4 @@
-// VENDORED from UnilitixCore 0.4.0 (Engine.swift) by scripts/sync-ios-core.sh.
+// VENDORED from UnilitixCore 0.5.0 (Engine.swift) by scripts/sync-ios-core.sh.
 // Do not edit here; change UnilitixCore and re-run the script.
 
 import Foundation
@@ -74,6 +74,11 @@ final class Engine {
     private let sessionLock = NSLock()
     private var crashSessionId: String?
 
+    /// The record `CrashFile`'s signal handlers left in the previous process,
+    /// read (and deleted) at init, before this process installs its own
+    /// handlers, and reported by `start`.
+    private var nativeCrash: String?
+
     init(config: UnilitixConfig, transport: Transport, store: EventStore,
          prefs: Preferences, device: DeviceInfo, consent: UnilitixConsent,
          screenshots: ScreenshotStore = ScreenshotStore(directory: nil),
@@ -81,6 +86,7 @@ final class Engine {
          reachability: Reachability = PathReachability(),
          random: @escaping () -> Double = { Double.random(in: 0..<1) },
          now: @escaping () -> Date = Date.init,
+         crashFilePath: String? = nil,
          log: @escaping (String) -> Void = { _ in }) {
         self.config = config
         self.transport = transport
@@ -95,13 +101,21 @@ final class Engine {
         self.log = log
         // A decision persisted from a previous launch wins over the argument.
         self.consent = prefs.consent ?? consent
+        if let path = crashFilePath { nativeCrash = CrashFile.consume(path: path) }
     }
 
     // MARK: Lifecycle
 
     /// Starts the first session and the flush timer. Call on `queue`.
     func start() {
+        // Before the new session: the crash belongs to the one that died.
+        let unattributed = reportNativeCrash()
         if consent != .denied { startSession() }
+        if let e = unattributed, var s = session {
+            s.crashed = true
+            session = s
+            emit(e)
+        }
         let t = DispatchSource.makeTimerSource(queue: queue)
         let interval = DispatchTimeInterval.seconds(max(1, config.flushIntervalSeconds))
         t.schedule(deadline: .now() + interval, repeating: interval)
@@ -239,20 +253,101 @@ final class Engine {
     }
 
     /// Crash path: runs on the crashing thread, never touches `queue`, and
-    /// waits at most the contract's fatal budget for the store.
-    func recordFatalSynchronously(type: String, message: String, stack: String?) {
+    /// waits at most the contract's fatal budget for the store. Returns false
+    /// only when the store could not take the report in time (or has no
+    /// record of the session); a report dropped on purpose (consent denied,
+    /// no session yet) returns true.
+    @discardableResult
+    func recordFatalSynchronously(type: String, message: String, stack: String?) -> Bool {
         sessionLock.lock()
         let sid = crashSessionId
         sessionLock.unlock()
-        guard let sessionId = sid, consent != .denied,
-              let e = errorEvent(type: type, message: message, stack: stack, fatal: true, checkCaps: false,
+        guard let sessionId = sid, consent != .denied else { return true }
+        guard let e = errorEvent(type: type, message: message, stack: stack, fatal: true, checkCaps: false,
                                  platform: "ios") else {
-            return
+            return true
         }
         let budget = TimeInterval(SdkContract.fatalFlushBudgetMs) / 1000
-        if store.append(e, sessionId: sessionId, waitUpTo: budget) {
-            store.saveNow()
+        guard store.append(e, sessionId: sessionId, waitUpTo: budget) else { return false }
+        store.saveNow()
+        return true
+    }
+
+    // MARK: Native crash from the previous process
+
+    /// Reports the record read at init as a fatal CRASH. Like the Flutter
+    /// SDK (2.1.2+), it goes to the session that was running when the
+    /// process died: the stored session with the latest `startedAt` at or
+    /// before the record's timestamp (no timestamp: the latest), which is
+    /// marked crashed. Returns the event when no stored session matches, for
+    /// `start` to emit in the new session. Consent denied drops it; pending
+    /// keeps it on the device like any other event. Call on `queue`, before
+    /// the new session starts.
+    private func reportNativeCrash() -> IngestEvent? {
+        guard let text = nativeCrash else { return nil }
+        nativeCrash = nil
+        guard consent != .denied else {
+            log("native crash from the previous launch dropped (consent denied)")
+            return nil
         }
+        guard let data = text.data(using: .utf8),
+              let record = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let crash = Engine.nativeCrashEvent(record, now: now()) else {
+            log("native crash record could not be read; dropped")
+            return nil
+        }
+        // A signal's timestamp is in whole seconds: allow a session that
+        // started within the second it died.
+        let latestStart = crash.crashedAt.map { $0.addingTimeInterval(1) }
+        guard var target = store.latestSession(startedAtOrBefore: latestStart) else {
+            log("native crash from the previous launch: no stored session matches; reported in the new one")
+            return crash.event
+        }
+        guard store.append(crash.event, sessionId: target.id) else { return crash.event }
+        target.crashed = true
+        if let at = crash.crashedAt, at > target.lastActivityAt { target.lastActivityAt = at }
+        store.upsertSession(target)
+        store.saveNow()
+        log("native crash from the previous launch reported against session \(target.id)")
+        return nil
+    }
+
+    /// The CRASH event for a `CrashFile` record, and when the process died
+    /// (nil when the record has no usable timestamp). The same fields as
+    /// the Flutter SDK reports for a native record: `exceptionType` as
+    /// recorded (`SIGNAL` for a signal), `fatal`, the record's stack, and
+    /// `metadata.fingerprint` from `CrashFile.fingerprint(of:)` (`SIGNAL:<n>`
+    /// for a signal). A signal's message is `Fatal signal 11 (SIGSEGV)`;
+    /// `metadata.signal` carries the number.
+    static func nativeCrashEvent(_ record: [String: Any], now: Date) -> (event: IngestEvent, crashedAt: Date?)? {
+        guard let type = record["exceptionType"] as? String, !type.isEmpty else { return nil }
+        let signal = CrashFile.intValue(record["signal"])
+        var message = record["exceptionMessage"] as? String ?? ""
+        if message.isEmpty, let n = signal {
+            message = CrashFile.signalName(n).map { "Fatal signal \(n) (\($0))" } ?? "Fatal signal \(n)"
+        }
+        var crashedAt: Date?
+        if let ms = (record["timestamp"] as? NSNumber)?.doubleValue, ms > 0 {
+            crashedAt = Date(timeIntervalSince1970: ms / 1000)
+        }
+        let stack = (record["stackTrace"] as? String).flatMap { $0.isEmpty ? nil : String($0.prefix(16 * 1024)) }
+        let fp = (record["fingerprint"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+            ?? CrashFile.fingerprint(of: record)
+
+        var e = IngestEvent(type: "CRASH", screen: "", at: crashedAt ?? now)
+        e.fatal = true
+        let title = message.isEmpty ? type : "\(type): \(message)"
+        e.title = String(title.prefix(200))
+        e.exceptionType = type
+        e.exceptionMessage = message
+        e.stackTrace = stack
+        var metadata: [String: JSONValue] = [
+            "fingerprint": .string(fp),
+            "platform": .string(record["platform"] as? String ?? "ios"),
+        ]
+        if let n = signal { metadata["signal"] = .int(Int64(n)) }
+        e.metadata = metadata
+        return (e, crashedAt)
     }
 
     private func errorEvent(type: String, message: String, stack: String?, fatal: Bool,
