@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.7.2] - 2026-10-25
+
+### Fixed
+- **Android: `init()` runs on the main thread.** React Native calls native
+  methods on its own thread, where the Android SDK cannot register its
+  lifecycle observer, so init could fail and nothing was collected.
+- **Android: taps, rage taps and replay start on the current screen.** The SDK
+  attaches to the Activity that already exists when JS calls `init()`
+  (unilitix-android 1.10.1 `attachToActivity`); before, single-Activity apps
+  recorded no taps at all.
+- **Android: fatal JS errors are reported once.** The `JavascriptException`
+  React Native throws after a fatal JS error is no longer recorded a second
+  time (unilitix-android 1.10.1 `setCrashFilter`).
+- **Android: no fake screen views.** Native screen tracking is off, as on iOS,
+  so `MainActivity` is no longer reported as a screen on every resume.
+- **Android: `replaySampleRate` no longer drops events.** It was passed to the
+  Android SDK's event sampling; it is ignored on Android until the SDK
+  samples replay per session.
+- **The JS crash handler is installed before native init finishes**, so errors
+  thrown while the app starts are reported.
+- unilitix-android 1.10.1: WebViews masked and `FLAG_SECURE` screens skipped
+  in replay, `reset()` gives a new anonymous id, and SDK storage errors can no
+  longer crash the app.
+
 ## [1.7.1] - 2026-10-24
 
 ### Changed
