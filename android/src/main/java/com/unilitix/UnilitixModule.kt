@@ -6,6 +6,7 @@ import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.ReadableMap
+import com.facebook.react.bridge.UiThreadUtil
 import io.unilitix.sdk.Unilitix
 import io.unilitix.sdk.UnilitixConsent
 
@@ -29,8 +30,18 @@ class UnilitixModule(
 
   override fun getName(): String = "Unilitix"
 
+  /**
+   * React Native calls @ReactMethods on its native-modules thread, but the SDK
+   * registers lifecycle observers and Activity callbacks, which Android only
+   * allows on the main thread. Init therefore runs there, then attaches to the
+   * Activity that already exists (JS starts after MainActivity is created).
+   */
   @ReactMethod
   fun init(options: ReadableMap, promise: Promise) {
+    UiThreadUtil.runOnUiThread { initOnMainThread(options, promise) }
+  }
+
+  private fun initOnMainThread(options: ReadableMap, promise: Promise) {
     try {
       val apiKey = options.getString("apiKey")
         ?: return promise.reject("MISSING_API_KEY",
@@ -46,9 +57,10 @@ class UnilitixModule(
           ?.let { apiUrl = it }
         if (options.hasKey("debug"))
           debugLogging = options.getBoolean("debug")
-        if (options.hasKey("autoTrackScreens"))
-          autoTrackScreens =
-            options.getBoolean("autoTrackScreens")
+        // Screens come from JS navigation (Unilitix.screen); the native
+        // tracker would report the host Activity ("MainActivity") as a
+        // screen on every resume. Same as the iOS bridge.
+        autoTrackScreens = false
         if (options.hasKey("autoTrackTaps"))
           autoTrackTaps =
             options.getBoolean("autoTrackTaps")
@@ -114,10 +126,18 @@ class UnilitixModule(
         if (options.hasKey("maxScreenshotsPerSession"))
           maxScreenshotsPerSession =
             options.getInt("maxScreenshotsPerSession")
-        if (options.hasKey("sampleRate"))
-          sampleRate =
-            options.getDouble("sampleRate")
+        // `sampleRate` from JS is the replay sample rate. The Android SDK's
+        // own sampleRate drops individual events instead, so it is not
+        // passed on: replay sampling on Android needs SDK support first.
       }
+      // Fatal JS errors are reported from JS (recordException with fatal);
+      // React Native then re-throws them as JavascriptException. Let the SDK
+      // pass that one on unrecorded so the crash is not counted twice.
+      Unilitix.setCrashFilter { t ->
+        !(t.javaClass.name == JS_EXCEPTION_CLASS &&
+          System.currentTimeMillis() - lastJsFatalAt < JS_FATAL_WINDOW_MS)
+      }
+      reactContext.currentActivity?.let { Unilitix.attachToActivity(it) }
       promise.resolve(null)
     } catch (e: Exception) {
       promise.reject("INIT_ERROR", e.message, e)
@@ -179,6 +199,7 @@ class UnilitixModule(
       val message = options.getString("message") ?: ""
       val stack = options.getString("stack") ?: ""
       val fatal = options.hasKey("fatal") && options.getBoolean("fatal")
+      if (fatal) lastJsFatalAt = System.currentTimeMillis()
       Unilitix.recordException(type, message, stack, fatal, "js")
       promise.resolve(null)
     } catch (e: Exception) {
@@ -259,5 +280,13 @@ class UnilitixModule(
     catch (e: Exception) {
       promise.reject("RESET_ERROR", e.message, e)
     }
+  }
+
+  companion object {
+    private const val JS_EXCEPTION_CLASS = "com.facebook.react.common.JavascriptException"
+    private const val JS_FATAL_WINDOW_MS = 15_000L
+
+    @Volatile
+    private var lastJsFatalAt = 0L
   }
 }

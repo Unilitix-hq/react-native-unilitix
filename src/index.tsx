@@ -290,13 +290,15 @@ const Unilitix = {
     _initPromise = (async () => {
       const m = native();
       if (!m) return;
+      // Installed before the native init resolves, so an error thrown while
+      // the app is still starting is reported (queued until init completes).
+      if (config?.installJsCrashHandler !== false) {
+        setupUnilitixCrashHandler();
+      }
       // Both native layers take the initial consent (pending included);
       // a decision persisted on an earlier launch wins over it.
       await m.init({ ...buildInitOptions(apiKey, config), consent: _consent });
       _initialized = true;
-      if (config?.installJsCrashHandler !== false) {
-        setupUnilitixCrashHandler();
-      }
       const queued = _preInit.splice(0, _preInit.length);
       for (const fn of queued) {
         await fn();

@@ -98,6 +98,17 @@ jobs:
         run: |
           /bin/bash -c "yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null"
 
+      - name: Install Android NDK (retries a corrupt download)
+        if: env.turbo_cache_hit != 1
+        # Gradle installs the NDK itself but gives up on one bad download
+        # ("Archive is not a ZIP archive"); install it first, with retries.
+        run: |
+          for i in 1 2 3; do
+            yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;27.1.12297006" > /dev/null && exit 0
+            echo "NDK install failed (attempt $i), retrying in 20 s"; sleep 20
+          done
+          exit 1
+
 
       - name: Cache Gradle
         if: env.turbo_cache_hit != 1
