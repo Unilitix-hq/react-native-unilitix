@@ -4,7 +4,7 @@ import Unilitix from 'react-native-unilitix';
 
 export default function App() {
   useEffect(() => {
-    Unilitix.init('YOUR_API_KEY', { debug: true }).then(() => {
+    Unilitix.init('YOUR_API_KEY', { debug: __DEV__ }).then(() => {
       Unilitix.screen('Home');
     });
   }, []);

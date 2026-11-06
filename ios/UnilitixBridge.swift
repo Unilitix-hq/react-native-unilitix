@@ -11,7 +11,7 @@ public final class UnilitixBridge: NSObject {
 
     /// This package's version; must match package.json (checked by
     /// src/__tests__/ios.test.tsx).
-    static let packageVersion = "1.7.2"
+    static let packageVersion = "1.7.3"
 
     private static let lock = NSLock()
     private static var engine: Engine?
@@ -61,8 +61,8 @@ public final class UnilitixBridge: NSObject {
 
         let debug = config.debug
         // A fatal signal is recorded here by the dying process and reported
-        // by the engine on the next launch (read at init, before the handlers
-        // below are installed).
+        // by the engine on the next launch (read by Engine.start on its queue;
+        // the handlers below only write to the file when a crash happens).
         let crashFile = CrashFile.enginePath
         // A hang the app did not survive is reported on the next launch.
         let hangFile = AppHangFile.enginePath

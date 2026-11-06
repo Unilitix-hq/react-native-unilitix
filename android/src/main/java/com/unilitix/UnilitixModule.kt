@@ -139,7 +139,7 @@ class UnilitixModule(
       }
       reactContext.currentActivity?.let { Unilitix.attachToActivity(it) }
       promise.resolve(null)
-    } catch (e: Exception) {
+    } catch (e: Throwable) {
       promise.reject("INIT_ERROR", e.message, e)
     }
   }
@@ -153,7 +153,7 @@ class UnilitixModule(
       val props = options.getMap("properties").toNonNullMap()
       Unilitix.trackEvent(event, props)
       promise.resolve(null)
-    } catch (e: Exception) {
+    } catch (e: Throwable) {
       promise.reject("TRACK_ERROR", e.message, e)
     }
   }
@@ -167,7 +167,7 @@ class UnilitixModule(
       val traits = options.getMap("traits").toNonNullMap()
       Unilitix.identify(userId, traits)
       promise.resolve(null)
-    } catch (e: Exception) {
+    } catch (e: Throwable) {
       promise.reject("IDENTIFY_ERROR", e.message, e)
     }
   }
@@ -180,7 +180,7 @@ class UnilitixModule(
             "screenName is required")
       Unilitix.trackScreen(name)
       promise.resolve(null)
-    } catch (e: Exception) {
+    } catch (e: Throwable) {
       promise.reject("SCREEN_ERROR", e.message, e)
     }
   }
@@ -202,7 +202,7 @@ class UnilitixModule(
       if (fatal) lastJsFatalAt = System.currentTimeMillis()
       Unilitix.recordException(type, message, stack, fatal, "js")
       promise.resolve(null)
-    } catch (e: Exception) {
+    } catch (e: Throwable) {
       promise.reject("EXCEPTION_ERROR", e.message, e)
     }
   }
@@ -215,7 +215,7 @@ class UnilitixModule(
       val category = options.getString("category") ?: "custom"
       Unilitix.addBreadcrumb(message, category)
       promise.resolve(null)
-    } catch (e: Exception) {
+    } catch (e: Throwable) {
       promise.reject("BREADCRUMB_ERROR", e.message, e)
     }
   }
@@ -223,7 +223,7 @@ class UnilitixModule(
   @ReactMethod
   fun startSession(options: ReadableMap?, promise: Promise) {
     try { Unilitix.startSession(); promise.resolve(null) }
-    catch (e: Exception) {
+    catch (e: Throwable) {
       promise.reject("SESSION_ERROR", e.message, e)
     }
   }
@@ -231,7 +231,7 @@ class UnilitixModule(
   @ReactMethod
   fun endSession(options: ReadableMap?, promise: Promise) {
     try { Unilitix.endSession(); promise.resolve(null) }
-    catch (e: Exception) {
+    catch (e: Throwable) {
       promise.reject("SESSION_ERROR", e.message, e)
     }
   }
@@ -239,7 +239,7 @@ class UnilitixModule(
   @ReactMethod
   fun flush(options: ReadableMap?, promise: Promise) {
     try { Unilitix.flush(); promise.resolve(null) }
-    catch (e: Exception) {
+    catch (e: Throwable) {
       promise.reject("FLUSH_ERROR", e.message, e)
     }
   }
@@ -253,7 +253,7 @@ class UnilitixModule(
             "value must be granted, pending or denied")
       Unilitix.setConsent(consent)
       promise.resolve(null)
-    } catch (e: Exception) {
+    } catch (e: Throwable) {
       promise.reject("CONSENT_ERROR", e.message, e)
     }
   }
@@ -261,7 +261,7 @@ class UnilitixModule(
   @ReactMethod
   fun optOut(options: ReadableMap?, promise: Promise) {
     try { Unilitix.optOut(); promise.resolve(null) }
-    catch (e: Exception) {
+    catch (e: Throwable) {
       promise.reject("OPT_ERROR", e.message, e)
     }
   }
@@ -269,7 +269,7 @@ class UnilitixModule(
   @ReactMethod
   fun optIn(options: ReadableMap?, promise: Promise) {
     try { Unilitix.optIn(); promise.resolve(null) }
-    catch (e: Exception) {
+    catch (e: Throwable) {
       promise.reject("OPT_ERROR", e.message, e)
     }
   }
@@ -277,7 +277,7 @@ class UnilitixModule(
   @ReactMethod
   fun reset(options: ReadableMap?, promise: Promise) {
     try { Unilitix.reset(); promise.resolve(null) }
-    catch (e: Exception) {
+    catch (e: Throwable) {
       promise.reject("RESET_ERROR", e.message, e)
     }
   }
