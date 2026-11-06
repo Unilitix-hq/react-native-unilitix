@@ -5,26 +5,31 @@ on:
 # Publishes with npm trusted publishing (OIDC): no NPM_TOKEN secret to expire
 # or leak. Requires a trusted publisher configured once on npmjs.com for this
 # repo and workflow file, and npm CLI >= 11.5.1 (Node 24 ships it).
+#
+# The same checks as CI (lint, typecheck, test, build) run in `verify`
+# first; `publish` only runs when they pass. Actions are pinned to the SHAs
+# CI uses. Neither job restores the dependency cache: a release is built
+# from a clean `yarn install --immutable`.
 permissions:
   contents: read
-  id-token: write
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  publish:
+  verify:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      # No registry-url: with it, setup-node writes an .npmrc holding a
-      # placeholder auth token, and npm sends that token instead of
-      # exchanging the OIDC identity (E404 on PUT).
-      - uses: actions/setup-node@v4
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
-          node-version: 24
+          persist-credentials: false
 
-      - name: npm with trusted publishing support (>= 11.5.1)
-        run: |
-          npm install -g npm@^11.5.1
-          npm --version
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: .nvmrc
 
       - name: Tag matches package.json version
         run: |
@@ -32,20 +37,63 @@ jobs:
           PKG=$(node -p "require('./package.json').version")
           test "$TAG" = "$PKG" || { echo "tag $TAG != package.json $PKG"; exit 1; }
 
+      - name: Tag matches the iOS bridge version
+        run: |
+          PKG=$(node -p "require('./package.json').version")
+          grep -q "packageVersion = \"$PKG\"" ios/UnilitixBridge.swift || {
+            echo "ios/UnilitixBridge.swift packageVersion != $PKG"; exit 1; }
+
       - name: Install dependencies
         run: yarn install --immutable
 
-      - name: Lint
+      - name: Lint files
         run: yarn lint
 
-      - name: Type check
+      - name: Typecheck files
         run: yarn typecheck
 
-      - name: Test
-        run: yarn test --no-coverage
+      - name: Run unit tests
+        run: yarn test --maxWorkers=2 --coverage
 
-      - name: Build
+      - name: Build package
         run: yarn prepare
 
+      - name: Check package contents
+        run: yarn pack:check
+
+  publish:
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+
+      # No registry-url: with it, setup-node writes an .npmrc holding a
+      # placeholder auth token, and npm sends that token instead of
+      # exchanging the OIDC identity (E404 on PUT).
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: .nvmrc
+
+      - name: npm with trusted publishing support (>= 11.5.1)
+        run: |
+          npm install -g npm@^11.5.1
+          npm --version
+
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      - name: Build package
+        run: yarn prepare
+
+      - name: Check package contents
+        run: yarn pack:check
+
       - name: Publish
-        run: npm publish --access public --provenance
+        run: npm publish --access public --provenance --ignore-scripts

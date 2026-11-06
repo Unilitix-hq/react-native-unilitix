@@ -1,5 +1,62 @@
 # Changelog
 
+## [1.7.3] - 2026-11-06
+
+Release order: publish **unilitix-android 1.10.2** to Maven Central first;
+this version depends on it and the Android build fails until it is there.
+
+### Changed
+- **iOS core updated to UnilitixCore 0.7.2** (from 0.7.0): events with NaN or
+  infinite numbers no longer block uploads, subclassed WKWebViews are masked
+  in screenshots, saved data is loaded off the main thread at launch, the API
+  connection ignores cookies, and the privacy manifest marks collected data as
+  linked to the user (it is, once you call `identify`). Update your App Store
+  privacy answers to "linked" if they said otherwise.
+
+### Fixed
+- **The SDK can no longer throw into your app.** A native call that failed
+  straight away (for example the bridge rejecting an event property it
+  cannot send) used to throw out of `track`, `identify`, `screen` and the
+  other calls. Every call now resolves, whatever the native side does, and
+  logs a warning in development builds.
+- **Event properties and user traits are cleaned before they are sent.**
+  Circular references, functions and symbols no longer break a call; very
+  deep objects and very long strings are cut down.
+- **Your own error handler always runs.** If Unilitix failed while reporting
+  an uncaught JS error, the previous handler (React Native's red box, or the
+  app closing on a fatal error) could be skipped. It now always runs, with
+  the same fatal flag.
+- **`init()` no longer rejects.** When the native SDK fails to start,
+  `init()` resolves, `isInitialized` stays false, a warning is logged in
+  development, and you can call `init()` again. Apps that relied on catching
+  the rejection should check `Unilitix.isInitialized` instead.
+- **Expo Go and unlinked installs:** every call is a no-op, as documented,
+  instead of `init()` failing with a "not linked" error. Development builds
+  log the reason once.
+- **A consent choice made before `init()` is kept.** Calling
+  `setConsent('denied')` before `init()` was overwritten by the `consent`
+  option (default `'granted'`).
+- **iOS: the pod ships an Apple privacy manifest** (`PrivacyInfo.xcprivacy`)
+  so App Store builds no longer miss the SDK's required-reason API and
+  collected-data declarations.
+- **iOS: the podspec points at the `v1.7.3` git tag** that releases are
+  tagged with (it used `1.7.3`).
+- **Android: a native error during start-up (not only an exception) is
+  caught** and reported to JS instead of crashing the app.
+
+### Added
+- `trackUnhandledRejections` option (default `true`). Hermes has a single
+  promise-rejection tracker; set it to `false` if another library must own
+  it. Unilitix keeps React Native's development warning for unhandled
+  rejections.
+
+### Changed
+- Requires React Native 0.71+ and React 18+ (declared in `peerDependencies`;
+  these were already the documented minimums).
+- Uses unilitix-android 1.10.2.
+- The TypeScript sources ship in the npm package, so tools that resolve the
+  `source` export condition find them.
+
 ## [1.7.2] - 2026-10-25
 
 ### Fixed

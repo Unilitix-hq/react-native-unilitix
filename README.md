@@ -9,25 +9,31 @@ African-first mobile UX analytics.
 ## Install
 
 ```bash
-npm install react-native-unilitix@^1.0.4
+npm install react-native-unilitix
 # or
-yarn add react-native-unilitix@^1.0.4
+yarn add react-native-unilitix
 ```
+
+Then `cd ios && pod install` and rebuild the app.
 
 ## Quick start
 
 ```tsx
-import Unilitix, { setupUnilitixCrashHandler } from 'react-native-unilitix';
+import Unilitix from 'react-native-unilitix';
 import { useEffect } from 'react';
 
 export default function App() {
   useEffect(() => {
-    Unilitix.init('YOUR_API_KEY', { debug: true }).then(() => {
-      setupUnilitixCrashHandler();
-    });
+    // Logs only in development builds. Installs the JS crash handler too.
+    Unilitix.init('YOUR_API_KEY', { debug: __DEV__ });
   }, []);
 }
 ```
+
+The SDK never throws or rejects into your app: `init()` and every other
+call resolve even when the native side fails (dev builds log a
+`[Unilitix] … failed` warning; `Unilitix.isInitialized` tells you whether
+init succeeded, and a failed `init()` can be called again).
 
 Get your API key at [app.unilitix.com](https://app.unilitix.com)
 → Settings → Apps → Create App.
@@ -40,6 +46,11 @@ Unilitix.track('purchase_completed', {
   currency: 'NGN',
 });
 ```
+
+Properties (and `identify` traits) are cleaned before they reach native
+code: functions, symbols and `undefined` are dropped, circular references
+become `'[Circular]'`, nesting deeper than 5 levels becomes `'[Truncated]'`,
+strings are cut at 1024 characters and objects at 100 keys.
 
 ## Identify users
 
@@ -79,7 +90,14 @@ has run — no extra wiring:
   The report is persisted on-device (bounded to 2 s) before React Native's
   own handler runs, so a fatal error still reaches the dashboard.
 - An unhandled promise rejection is reported as a non-fatal `EXCEPTION`
-  (Hermes; on JSC use `captureException` in your `.catch`).
+  (Hermes; on JSC use `captureException` in your `.catch`). Hermes allows a
+  single rejection tracker, so Unilitix's replaces any installed before
+  `init()`; React Native's own dev-mode "Possible unhandled promise
+  rejection" warning is still logged in `__DEV__`. Pass
+  `trackUnhandledRejections: false` if another library must own the tracker.
+- Your previous global error handler (React Native's red box / process exit,
+  or another SDK's) always runs, with the original `isFatal`, even if
+  reporting fails.
 - On iOS, an uncaught Objective-C exception is reported as a `CRASH` with
   its stack, and a fatal signal in native code (SIGSEGV, SIGBUS, SIGABRT,
   SIGILL, SIGFPE, SIGTRAP) is reported on the next launch against the
@@ -122,11 +140,12 @@ The `⚠️` warning only appears if `Unilitix.screen()` or `createUnilitixNavig
 ```ts
 await Unilitix.init('YOUR_API_KEY', {
   // Behaviour
-  debug: true,
+  debug: __DEV__,
   autoTrackScreens: true,
   autoTrackTaps: true,
   autoTrackCrashes: true,
   autoTrackRageTaps: true,
+  trackUnhandledRejections: true, // Hermes; see Crash tracking
   // Privacy
   consent: 'granted',           // 'denied' collects nothing; see below
   maskInputs: true,
@@ -146,8 +165,9 @@ await Unilitix.init('YOUR_API_KEY', {
 
 `init()` is memoised and calls made before it resolves (`track`, `screen`,
 `identify`, …) are queued and replayed in order, so you can track from the
-first render. `Unilitix.isAvailable` is `false` in Expo Go, where every call
-is a no-op.
+first render. `Unilitix.isAvailable` is `false` in Expo Go (or when the
+native module is not linked), where `init()` resolves, every call is a
+no-op, and development builds log one warning.
 
 ## Privacy
 
@@ -161,7 +181,15 @@ Apps that must ask first (NDPR, GDPR) start with `consent: 'pending'`:
 events and replay are kept on the device and nothing is uploaded until
 `setConsent('granted')` sends them, or `setConsent('denied')` deletes them.
 The decision is persisted and wins over `consent` on later launches. This
-works the same on Android and iOS.
+works the same on Android and iOS. A `setConsent` call made before `init()`
+is kept and wins over the `consent` option.
+
+On iOS the pod ships a privacy manifest (`PrivacyInfo.xcprivacy`, in the
+`unilitix_privacy` resource bundle) declaring the required-reason APIs the
+SDK uses (UserDefaults `CA92.1`, system boot time `35F9.1`, file timestamps
+`C617.1`), no tracking, and the data types it collects. They are declared
+as linked to the user because `identify()` attaches your user id to the
+session; Xcode includes them in your app's privacy report.
 
 ## Session control
 
@@ -182,7 +210,7 @@ await Unilitix.flush();
 |--------------|--------------|
 | Android      | API 21+      |
 | iOS          | iOS 13+: events, sessions, errors, crashes, taps, rage taps and screenshot replay |
-| React Native | 0.71+        |
+| React Native | 0.71+ (React 18+) |
 
 ## iOS internals
 

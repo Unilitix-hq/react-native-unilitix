@@ -113,12 +113,13 @@ describe('Unilitix SDK', () => {
       expect(NativeModules.Unilitix.init).toHaveBeenCalledTimes(1);
     });
 
-    it('rejects when native throws, and allows a retry', async () => {
+    it('resolves (never rejects) when native fails, and allows a retry', async () => {
       NativeModules.Unilitix.init = jest
         .fn()
         .mockRejectedValueOnce(new Error('INIT_ERROR'))
         .mockResolvedValueOnce(undefined);
-      await expect(Unilitix.init('bad_key')).rejects.toThrow('INIT_ERROR');
+      await expect(Unilitix.init('bad_key')).resolves.toBeUndefined();
+      expect(Unilitix.isInitialized).toBe(false);
       await Unilitix.init('bad_key', { installJsCrashHandler: false });
       expect(Unilitix.isInitialized).toBe(true);
     });

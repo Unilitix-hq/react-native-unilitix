@@ -57,6 +57,11 @@ jobs:
       - name: Build package
         run: yarn prepare
 
+      # Same check the publish workflow runs: the iOS privacy manifest and
+      # build output ship, tests and the example app do not.
+      - name: Check package contents
+        run: yarn pack:check
+
   build-android:
     runs-on: ubuntu-latest
 

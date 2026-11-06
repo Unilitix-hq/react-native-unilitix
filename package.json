@@ -1,6 +1,6 @@
 {
   "name": "react-native-unilitix",
-  "version": "1.7.2",
+  "version": "1.7.3",
   "description": "Official React Native SDK for Unilitix — African-first mobile UX analytics",
   "main": "lib/commonjs/index",
   "module": "lib/module/index",
@@ -20,6 +20,7 @@
     "./package.json": "./package.json"
   },
   "files": [
+    "src",
     "lib",
     "android",
     "ios",
@@ -41,6 +42,7 @@
     "example": "yarn workspace react-native-unilitix-example",
     "clean": "del-cli android/build example/android/build example/android/app/build example/ios/build lib",
     "prepare": "bob build",
+    "pack:check": "node scripts/check-package.mjs",
     "typecheck": "tsc",
     "lint": "eslint \"**/*.{js,ts,tsx}\"",
     "test": "jest",
@@ -103,8 +105,8 @@
     "typescript": "^6.0.2"
   },
   "peerDependencies": {
-    "react": "*",
-    "react-native": "*"
+    "react": ">=18",
+    "react-native": ">=0.71"
   },
   "workspaces": [
     "example"
