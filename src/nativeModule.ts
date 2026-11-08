@@ -1,4 +1,7 @@
-import { NativeModules, TurboModuleRegistry } from 'react-native';
+// Namespace import on purpose: react-native-web has no TurboModuleRegistry,
+// and a named import of it fails the web (Vite/Rollup) build. Reading it as
+// a property is undefined there and falls through to NativeModules.
+import * as ReactNative from 'react-native';
 import type { Spec } from './NativeUnilitix';
 
 /**
@@ -24,16 +27,19 @@ export type NativeUnilitix = Omit<
 export function lookupNativeModule(): NativeUnilitix | null {
   let m: unknown = null;
   try {
-    const registry = TurboModuleRegistry as
-      | { get?: (name: string) => unknown }
-      | undefined;
+    const registry = (
+      ReactNative as unknown as {
+        TurboModuleRegistry?: { get?: (name: string) => unknown };
+      }
+    ).TurboModuleRegistry;
     m = registry?.get?.('Unilitix') ?? null;
   } catch {
     m = null;
   }
   if (!m) {
     try {
-      m = (NativeModules as Record<string, unknown> | undefined)?.Unilitix;
+      m = (ReactNative.NativeModules as Record<string, unknown> | undefined)
+        ?.Unilitix;
     } catch {
       m = null;
     }
