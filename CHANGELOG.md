@@ -1,5 +1,79 @@
 # Changelog
 
+## [2.0.0] - Unreleased
+
+Release order:
+1. Publish **unilitix-android 1.11.2** to Maven Central. This version depends
+   on it (`setWrapper`, `recordExternalError`, `currentSessionId`); the
+   Android build fails until it is there.
+2. Release **UnilitixCore 0.8.0** and re-vendor it with `yarn ios:core`
+   (`scripts/sync-ios-core.sh`). The iOS bridge calls its wrapper and
+   external-error APIs; it does not compile against the 0.7.2 copy.
+3. Then tag `v2.0.0` here.
+
+### Breaking
+- Requires **React Native 0.74 or newer** (was 0.71): the Android package
+  uses `BaseReactPackage` for TurboModule support. Apps on 0.71–0.73 should
+  stay on 1.7.x until they upgrade React Native. No JS API was removed; on
+  0.74+ upgrading is a version bump plus `pod install`.
+
+### Added
+- **Readable JS stack traces (source maps).** Every JS error now carries the
+  bundle id, app version and build number its source map is uploaded under.
+  `react-native-unilitix/metro` stamps each release bundle with its own id;
+  a Gradle hook (`android/unilitix-sourcemaps.gradle`) and an Xcode build
+  phase (`scripts/upload-sourcemaps.sh`) upload the map with `unilitix-cli`
+  after every release build (Hermes maps included). Over-the-air updates can
+  pass their own `jsBundleId` / `release` / `dist` to `init`. See README
+  "Source maps".
+- **Expo config plugin.** `"plugins": ["react-native-unilitix"]` sets up the
+  source-map upload on both platforms for development builds and EAS Build.
+  Expo Go keeps working as a no-op.
+- **`<UnilitixMask>` and `<UnilitixUnmask>`** to hide content in session
+  replay (balances, card numbers) or show safe content when `maskAllText` is
+  on. Native views on both platforms, on the New Architecture and the old
+  one.
+- **First screen tracked automatically.** `useUnilitixNavigationTracking(ref)`
+  and `withUnilitixNavigation(NavigationContainer)` track the first screen
+  once React Navigation is ready (the old `onStateChange` listener never saw
+  it) and every change after it. `useUnilitixExpoRouterTracking(useSegments())`
+  does the same for Expo Router, naming screens by route pattern
+  (`/users/[id]`) so ids never leave the device.
+- **New Architecture support:** the module is a TurboModule and the masking
+  views are Fabric components (codegen specs in `src/`), with the legacy
+  bridge still supported.
+
+### Changed
+- **A repeated screen is sent once.** Calling `screen('Home')` twice in a row
+  (for example from two navigation helpers) now records one visit, as the
+  contract requires; the first screen of a new session is always sent.
+- **JS errors group the same on iOS and Android.** The crash fingerprint of a
+  JS error is now computed in JS with the shared contract algorithm.
+- **Other promise-rejection trackers keep working.** A Hermes rejection
+  tracker that a library installs after `init()` is now chained instead of
+  silently replacing Unilitix's, and one installed before can be passed as
+  `rejectionTracker`. `trackUnhandledRejections: false` still turns
+  Unilitix's off.
+- **Android reports its SDK wrapper version** (`react-native` and this
+  package's version) like iOS already did.
+- Uses unilitix-android 1.11.2 and UnilitixCore 0.8.0.
+- SDK contract 1.4.0.
+
+### Fixed
+- **Calls made before `init()` when the buffer is full now drop the oldest
+  call**, not the newest, so the most recent activity is kept.
+- **Calls made while `init()` is finishing can no longer jump ahead** of
+  calls that were already waiting (events could reach the dashboard out of
+  order).
+- **Long strings are no longer cut in the middle of an emoji.**
+
+### Quality
+- The shared contract's behaviour fixtures run in Jest (15 JS-layer cases,
+  exact native calls asserted; the other 35 are owned by the native SDKs,
+  see COVERAGE.md). CI enforces a coverage floor, checks the package size,
+  and boots the example app on an Android emulator to send an event to a
+  local test server.
+
 ## [1.7.3] - 2026-11-06
 
 Release order: publish **unilitix-android 1.10.2** to Maven Central first;

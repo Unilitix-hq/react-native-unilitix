@@ -281,6 +281,11 @@ describe('Unilitix SDK', () => {
         message: 'nope',
         stack: err.stack,
         fatal: false,
+        fingerprint: expect.stringMatching(/^[0-9a-f]{16}$/),
+        metadata: {
+          platform: 'react-native',
+          jsBundleId: 'index.android.bundle',
+        },
       });
     });
 

@@ -1,6 +1,6 @@
 {
   "name": "react-native-unilitix",
-  "version": "1.7.3",
+  "version": "2.0.0",
   "description": "Official React Native SDK for Unilitix — African-first mobile UX analytics",
   "main": "lib/commonjs/index",
   "module": "lib/module/index",
@@ -17,7 +17,9 @@
         "default": "./lib/commonjs/index.js"
       }
     },
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./metro": "./metro.js",
+    "./app.plugin.js": "./app.plugin.js"
   },
   "files": [
     "src",
@@ -27,6 +29,11 @@
     "cpp",
     "*.podspec",
     "react-native.config.js",
+    "app.plugin.js",
+    "plugin/build",
+    "metro.js",
+    "scripts/unilitix-sourcemaps.js",
+    "scripts/upload-sourcemaps.sh",
     "!ios/build",
     "!android/build",
     "!android/gradle",
@@ -36,12 +43,13 @@
     "!**/__tests__",
     "!**/__fixtures__",
     "!**/__mocks__",
+    "!src/generated/behaviourFixtures.ts",
     "!**/.*"
   ],
   "scripts": {
     "example": "yarn workspace react-native-unilitix-example",
-    "clean": "del-cli android/build example/android/build example/android/app/build example/ios/build lib",
-    "prepare": "bob build",
+    "clean": "del-cli android/build example/android/build example/android/app/build example/ios/build lib plugin/build",
+    "prepare": "bob build && tsc -p plugin",
     "pack:check": "node scripts/check-package.mjs",
     "typecheck": "tsc",
     "lint": "eslint \"**/*.{js,ts,tsx}\"",
@@ -50,7 +58,7 @@
     "web": "vite",
     "build:web": "vite build",
     "api:types": "openapi-typescript ../tazama/api/openapi.sdk.json -o src/generated/ingest.ts",
-    "api:contract": "cp ../tazama/api/sdk/ts/sdkContract.ts src/generated/sdkContract.ts",
+    "api:contract": "scripts/sync-contract.sh",
     "ios:core": "scripts/sync-ios-core.sh"
   },
   "keywords": [
@@ -80,12 +88,15 @@
     "@eslint/compat": "^2.0.3",
     "@eslint/eslintrc": "^3.3.5",
     "@eslint/js": "^10.0.1",
+    "@expo/config-plugins": "^57.0.11",
     "@jest/globals": "^30.0.0",
     "@react-native/babel-preset": "0.85.0",
     "@react-native/eslint-config": "0.85.0",
     "@react-native/jest-preset": "0.85.0",
     "@release-it/conventional-changelog": "^10.0.6",
+    "@types/node": "^24",
     "@types/react": "^19.2.0",
+    "@types/react-test-renderer": "^19.1.0",
     "commitlint": "^20.5.0",
     "del-cli": "^7.0.0",
     "eslint": "^9.39.4",
@@ -100,13 +111,14 @@
     "react-native": "0.85.0",
     "react-native-builder-bob": "^0.41.0",
     "react-native-web": "~0.21.1",
+    "react-test-renderer": "19.2.3",
     "release-it": "^19.2.4",
     "turbo": "^2.8.21",
     "typescript": "^6.0.2"
   },
   "peerDependencies": {
     "react": ">=18",
-    "react-native": ">=0.71"
+    "react-native": ">=0.74"
   },
   "workspaces": [
     "example"
@@ -129,7 +141,8 @@
           "project": "tsconfig.build.json"
         }
       ]
-    ]
+    ],
+    "exclude": "{**/__tests__/**,**/__fixtures__/**,**/__mocks__/**,generated/behaviourFixtures.ts}"
   },
   "prettier": {
     "quoteProps": "consistent",
@@ -149,6 +162,38 @@
     "modulePathIgnorePatterns": [
       "<rootDir>/example/node_modules",
       "<rootDir>/lib/"
+    ],
+    "testMatch": [
+      "<rootDir>/src/**/__tests__/**/*.test.[jt]s?(x)"
+    ],
+    "collectCoverageFrom": [
+      "src/**/*.{ts,tsx}",
+      "plugin/src/**/*.ts",
+      "metro.js",
+      "scripts/unilitix-sourcemaps.js",
+      "!src/**/__tests__/**",
+      "!src/generated/behaviourFixtures.ts",
+      "!src/generated/ingest.ts"
+    ],
+    "coverageThreshold": {
+      "global": {
+        "statements": 94,
+        "branches": 89,
+        "functions": 94,
+        "lines": 95
+      },
+      "./src/index.tsx": {
+        "statements": 92,
+        "branches": 88,
+        "functions": 92,
+        "lines": 92
+      }
+    },
+    "coverageReporters": [
+      "text",
+      "text-summary",
+      "lcov",
+      "json-summary"
     ]
   },
   "commitlint": {
@@ -186,5 +231,22 @@
       "vite"
     ],
     "version": "0.62.0"
+  },
+  "codegenConfig": {
+    "name": "RNUnilitixSpec",
+    "type": "all",
+    "jsSrcsDir": "src",
+    "android": {
+      "javaPackageName": "com.unilitix"
+    },
+    "ios": {
+      "modulesProvider": {
+        "Unilitix": "Unilitix"
+      },
+      "componentProvider": {
+        "UnilitixMaskView": "UnilitixMaskViewComponentView",
+        "UnilitixUnmaskView": "UnilitixUnmaskViewComponentView"
+      }
+    }
   }
 }

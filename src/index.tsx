@@ -1,6 +1,20 @@
-import { NativeModules, Platform } from 'react-native';
+import { AppState, Platform } from 'react-native';
+import { fingerprint } from './fingerprint';
 import type { components as IngestComponents } from './generated/ingest';
 import { SdkContract } from './generated/sdkContract';
+import { setScreenSink } from './navigation';
+import { lookupNativeModule, type NativeUnilitix } from './nativeModule';
+
+export {
+  createUnilitixNavigationListener,
+  useUnilitixNavigationTracking,
+  withUnilitixNavigation,
+  useUnilitixExpoRouterTracking,
+  expoRouterScreenName,
+  type NavigationContainerRefLike,
+} from './navigation';
+export { UnilitixMask, UnilitixUnmask } from './UnilitixMask';
+export { fingerprint as unilitixFingerprint } from './fingerprint';
 
 /**
  * Wire types of the Unilitix ingest API, generated from the server's
@@ -101,13 +115,39 @@ export interface UnilitixConfig {
   captureScreenshots?: boolean;
   /**
    * Report unhandled promise rejections (Hermes only) as non-fatal
-   * `EXCEPTION`s. Hermes keeps a single rejection tracker, so this replaces
-   * any tracker installed before `init()` (React Native's own dev-mode
-   * warning is kept: Unilitix logs the same warning in `__DEV__`). Set false
-   * if another library must own the tracker.
+   * `EXCEPTION`s. Hermes keeps a single rejection tracker and has no getter
+   * for it: a tracker installed *after* `init()` is chained (it keeps
+   * receiving every callback); one installed *before* is chained when you
+   * pass it as {@link rejectionTracker}. React Native's own dev-mode warning
+   * is kept (logged in `__DEV__`). Set false if another library must own
+   * the tracker outright.
    * @default true
    */
   trackUnhandledRejections?: boolean;
+  /**
+   * A Hermes rejection tracker your app (or a library) installed before
+   * `init()`, so Unilitix keeps calling it after taking over the tracker.
+   */
+  rejectionTracker?: UnilitixRejectionTracker;
+  /**
+   * `metadata.jsBundleId` of JS errors: the id the source map was uploaded
+   * with. Default: the id the Metro plugin (`react-native-unilitix/metro`)
+   * injected into the bundle, else the bundle file name
+   * (`index.android.bundle` / `main.jsbundle`). Set it for over-the-air
+   * updates (e.g. the EAS Update id).
+   */
+  jsBundleId?: string;
+  /**
+   * `metadata.release` of JS errors. Default: the app version
+   * (versionName / CFBundleShortVersionString). Set it to the OTA release
+   * label when the JS ships over the air.
+   */
+  release?: string;
+  /**
+   * `metadata.dist` of JS errors. Default: the build number
+   * (versionCode / CFBundleVersion).
+   */
+  dist?: string;
   /** Only upload screenshots on Wi-Fi. Default: true */
   uploadScreenshotsOnWifiOnly?: boolean;
   /**
@@ -142,48 +182,25 @@ export interface UnilitixConfig {
   screenshotHeartbeatMs?: number;
 }
 
-/** Shape of every native call: one options object, one promise. */
-type NativeUnilitix = {
-  init(options: Record<string, unknown>): Promise<void>;
-  track(options: {
-    event: string;
-    properties: Record<string, unknown>;
-  }): Promise<void>;
-  identify(options: {
-    userId: string;
-    traits: Record<string, unknown>;
-  }): Promise<void>;
-  screen(options: { screenName: string }): Promise<void>;
-  recordException(options: {
-    type: string;
-    message: string;
-    stack: string;
-    fatal: boolean;
-  }): Promise<void>;
-  addBreadcrumb(options: { message: string; category: string }): Promise<void>;
-  startSession(options: Record<string, never>): Promise<void>;
-  endSession(options: Record<string, never>): Promise<void>;
-  flush(options: Record<string, never>): Promise<void>;
-  optOut(options: Record<string, never>): Promise<void>;
-  optIn(options: Record<string, never>): Promise<void>;
-  reset(options: Record<string, never>): Promise<void>;
-  /** iOS only: the core supports a real pending state. */
-  setConsent?(options: { value: UnilitixConsent }): Promise<void>;
-};
+/**
+ * A Hermes promise rejection tracker
+ * (`HermesInternal.enablePromiseRejectionTracker` options).
+ */
+export interface UnilitixRejectionTracker {
+  allRejections?: boolean;
+  onUnhandled?: (id: number, reason: unknown) => void;
+  onHandled?: (id: number) => void;
+}
 
 let _warnedMissing = false;
 
 /**
- * The native module, or null when it is not linked (Expo Go, a missing
- * `pod install`, web). Every call is then a no-op; dev builds warn once.
+ * The native module (TurboModule, or the legacy bridge module), or null
+ * when it is not linked (Expo Go, a missing `pod install`, web). Every call
+ * is then a no-op; dev builds warn once.
  */
 function native(): NativeUnilitix | null {
-  let m: NativeUnilitix | undefined;
-  try {
-    m = NativeModules.Unilitix as NativeUnilitix | undefined;
-  } catch {
-    m = undefined;
-  }
+  const m = lookupNativeModule();
   if (!m) {
     if (DEV && !_warnedMissing) {
       _warnedMissing = true;
@@ -223,11 +240,25 @@ function safely(what: string, fn: () => Promise<void> | void): Promise<void> {
 // ── Property sanitising ─────────────────────────────────────────────────────
 
 /** Deepest nesting passed to native; deeper values become `'[Truncated]'`. */
-const MAX_DEPTH = 5;
-/** Longest string passed to native; longer ones are cut. */
-const MAX_STRING_LENGTH = 1024;
+const MAX_DEPTH = SdkContract.maxPropertyDepth;
+/** Longest string passed to native, in UTF-16 units; longer ones are cut. */
+const MAX_STRING_LENGTH = SdkContract.maxStringLength;
 /** Most keys (or array items) kept per object. */
-const MAX_KEYS = 100;
+const MAX_KEYS = SdkContract.maxPropertyKeys;
+const TRUNCATED = SdkContract.truncatedMarker;
+
+/**
+ * Cuts [s] to at most [max] UTF-16 units without splitting a surrogate
+ * pair (an emoji at the cut point is dropped whole).
+ * @internal exported for tests
+ */
+export function truncate(s: string, max = MAX_STRING_LENGTH): string {
+  if (s.length <= max) return s;
+  let end = max;
+  const last = s.charCodeAt(end - 1);
+  if (last >= 0xd800 && last <= 0xdbff) end -= 1;
+  return s.slice(0, end);
+}
 
 function sanitizeValue(
   v: unknown,
@@ -236,7 +267,7 @@ function sanitizeValue(
 ): unknown {
   switch (typeof v) {
     case 'string':
-      return v.length > MAX_STRING_LENGTH ? v.slice(0, MAX_STRING_LENGTH) : v;
+      return truncate(v);
     case 'number':
       return Number.isFinite(v) ? v : null;
     case 'boolean':
@@ -257,7 +288,7 @@ function sanitizeValue(
     return sanitizeValue(`${o.name}: ${o.message}`, depth, seen);
   }
   if (seen.has(o)) return '[Circular]';
-  if (depth >= MAX_DEPTH) return '[Truncated]';
+  if (depth >= MAX_DEPTH) return TRUNCATED;
   seen.add(o);
   try {
     if (Array.isArray(o)) {
@@ -320,8 +351,7 @@ export function sanitizeProperties(input: unknown): Record<string, unknown> {
 
 function str(v: unknown): string {
   try {
-    const s = typeof v === 'string' ? v : String(v ?? '');
-    return s.length > MAX_STRING_LENGTH ? s.slice(0, MAX_STRING_LENGTH) : s;
+    return truncate(typeof v === 'string' ? v : String(v ?? ''));
   } catch {
     return '';
   }
@@ -341,12 +371,34 @@ let _screenEventReceived = false;
 let _crashHandlerInstalled = false;
 
 /**
+ * The screen last sent to native in the current session, for the
+ * contract's dedupe rule (`screen(name)` emits only when the name differs
+ * from the session's current screen). Cleared whenever a new session may
+ * have started: init, reset, startSession/endSession, and a return to the
+ * foreground after the session timeout or with a new native session id.
+ */
+let _lastScreen: string | null = null;
+/** The native session id `_lastScreen` belongs to, when native reports it. */
+let _screenSessionId: string | null = null;
+let _sessionTimeoutMs = 1800 * 1000;
+let _backgroundedAt: number | null = null;
+let _appStateSubscription: { remove(): void } | null = null;
+
+/** release / dist / jsBundleId sent with every JS error. */
+type JsErrorInfo = { jsBundleId?: string; release?: string; dist?: string };
+let _configuredErrorInfo: JsErrorInfo = {};
+let _buildInfo: { release?: string; dist?: string } = {};
+
+/**
  * Calls made before `init()` resolves. Replayed in order once the native
  * side is ready, so an app can track from its first render without racing
- * the bridge. Bounded so a never-initialised SDK cannot grow without limit.
+ * the bridge. Bounded so a never-initialised SDK cannot grow without limit:
+ * the oldest call is dropped first (`preInitBufferSize`).
  */
 const PRE_INIT_LIMIT = SdkContract.preInitBufferSize;
 const _preInit: Array<() => Promise<void>> = [];
+/** Calls chained on the in-flight init that have not run yet. */
+let _waitingForInit = 0;
 
 /**
  * Runs [fn] now when the SDK is ready, queues it while init is in flight or
@@ -357,24 +409,39 @@ const _preInit: Array<() => Promise<void>> = [];
  */
 function whenReady(
   what: string,
-  fn: (m: NativeUnilitix) => Promise<void> | void
+  fn: (m: NativeUnilitix) => Promise<unknown> | void
 ): Promise<void> {
   const run = (): Promise<void> =>
     safely(what, () => {
       const m = native();
       if (!m) return undefined;
-      return fn(m);
+      return fn(m) as Promise<void> | void;
     });
-  if (_initialized) return run();
+  if (_initialized && _waitingForInit === 0) return run();
   if (_initAttempt) {
-    // A failed init drops calls made while it was in flight.
-    return _initAttempt.then(run, () => undefined);
+    // Ordered after the replay of earlier calls (and after calls already
+    // waiting, so nothing overtakes them); a failed init drops calls made
+    // while it was in flight.
+    _waitingForInit++;
+    return _initAttempt.then(
+      () => {
+        _waitingForInit--;
+        return run();
+      },
+      () => {
+        _waitingForInit--;
+      }
+    );
   }
-  if (_preInit.length < PRE_INIT_LIMIT) {
-    _preInit.push(run);
-  } else if (DEV) {
-    console.warn(`[Unilitix] ${what} before init() dropped (buffer full)`);
+  if (_preInit.length >= PRE_INIT_LIMIT) {
+    _preInit.shift();
+    if (DEV) {
+      console.warn(
+        `[Unilitix] buffer of calls before init() is full: oldest dropped`
+      );
+    }
   }
+  _preInit.push(run);
   return Promise.resolve();
 }
 
@@ -414,6 +481,129 @@ function buildInitOptions(apiKey: string, config?: UnilitixConfig) {
   };
 }
 
+// ── JS error metadata (source maps) ─────────────────────────────────────────
+
+/** Prefix of the bundle id the Metro plugin injects (see metro.js). */
+const BUNDLE_ID_MARKER = 'UNILITIX_BUNDLE_ID=';
+/** What `unilitix-cli upload-sourcemap --bundle-id` accepts. */
+const BUNDLE_ID_RE = /^[A-Za-z0-9._-]{1,128}$/;
+
+function nonEmpty(v: unknown): string | undefined {
+  return typeof v === 'string' && v.trim() !== '' ? str(v.trim()) : undefined;
+}
+
+/**
+ * `metadata.jsBundleId`: the configured id, else the id injected at build
+ * time by `react-native-unilitix/metro`, else the bundle file name the CLI
+ * uses by default.
+ * @internal exported for tests
+ */
+export function currentJsBundleId(): string {
+  const configured = nonEmpty(_configuredErrorInfo.jsBundleId);
+  if (configured) return configured;
+  try {
+    const injected = (globalThis as { __UNILITIX_BUNDLE_ID__?: unknown })
+      .__UNILITIX_BUNDLE_ID__;
+    if (typeof injected === 'string') {
+      const id = injected.startsWith(BUNDLE_ID_MARKER)
+        ? injected.slice(BUNDLE_ID_MARKER.length)
+        : injected;
+      if (BUNDLE_ID_RE.test(id)) return id;
+    }
+  } catch {
+    // fall through to the default
+  }
+  return Platform.OS === 'ios' ? 'main.jsbundle' : 'index.android.bundle';
+}
+
+/** Contract 1.4.0 metadata of a JS error (`metadata.*`). */
+function jsErrorMetadata(): Record<string, string> {
+  const out: Record<string, string> = {
+    platform: 'react-native',
+    [SdkContract.metadataJsBundleId]: currentJsBundleId(),
+  };
+  const release =
+    nonEmpty(_configuredErrorInfo.release) ?? nonEmpty(_buildInfo.release);
+  const dist = nonEmpty(_configuredErrorInfo.dist) ?? nonEmpty(_buildInfo.dist);
+  if (release) out[SdkContract.metadataRelease] = release;
+  if (dist) out[SdkContract.metadataDist] = dist;
+  return out;
+}
+
+async function loadBuildInfo(m: NativeUnilitix): Promise<void> {
+  try {
+    if (!m.getBuildInfo) return;
+    const info = (await m.getBuildInfo({})) as {
+      appVersion?: unknown;
+      buildNumber?: unknown;
+    } | null;
+    _buildInfo = {
+      release: nonEmpty(info?.appVersion),
+      dist: nonEmpty(
+        typeof info?.buildNumber === 'number'
+          ? String(info.buildNumber)
+          : info?.buildNumber
+      ),
+    };
+  } catch (e) {
+    warn('getBuildInfo', e);
+  }
+}
+
+// ── Sessions (screen dedupe) ────────────────────────────────────────────────
+
+/** A new session may have started: the next screen is always sent. */
+function forgetScreen() {
+  _lastScreen = null;
+  _screenSessionId = null;
+}
+
+/** Remembers the native session the current screen belongs to. */
+function refreshSessionId(m: NativeUnilitix): void {
+  if (!m.currentSessionId) return;
+  try {
+    Promise.resolve(m.currentSessionId({})).then(
+      (id) => {
+        const sid = typeof id === 'string' && id !== '' ? id : null;
+        if (_screenSessionId !== null && sid !== _screenSessionId) {
+          // The core started a new session we were not told about.
+          _lastScreen = null;
+        }
+        _screenSessionId = sid;
+      },
+      () => undefined
+    );
+  } catch {
+    // Older native module: the timeout rule below still applies.
+  }
+}
+
+function onAppStateChange(state: string) {
+  if (state === 'background' || state === 'inactive') {
+    if (state === 'background') _backgroundedAt = Date.now();
+    return;
+  }
+  if (state !== 'active') return;
+  const since = _backgroundedAt;
+  _backgroundedAt = null;
+  if (since !== null && Date.now() - since >= _sessionTimeoutMs) {
+    // The core starts a new session on this foreground.
+    _lastScreen = null;
+  }
+  const m = _initialized ? native() : null;
+  if (m) refreshSessionId(m);
+}
+
+function watchAppState() {
+  if (_appStateSubscription) return;
+  try {
+    const sub = AppState?.addEventListener?.('change', onAppStateChange);
+    _appStateSubscription = sub ?? null;
+  } catch {
+    _appStateSubscription = null;
+  }
+}
+
 /**
  * Unilitix React Native SDK
  *
@@ -429,7 +619,7 @@ const Unilitix = {
    * linked (false in Expo Go).
    */
   get isAvailable(): boolean {
-    return !!NativeModules.Unilitix;
+    return lookupNativeModule() !== null;
   },
 
   /** True once `init()` has completed on the native side. */
@@ -462,6 +652,11 @@ const Unilitix = {
     // A decision the app recorded with setConsent() before init wins over
     // the configured starting state.
     if (!_consentSetByApp) _consent = config?.consent ?? 'granted';
+    _configuredErrorInfo = {
+      jsBundleId: config?.jsBundleId,
+      release: config?.release,
+      dist: config?.dist,
+    };
     const attempt = (async () => {
       const m = native();
       if (!m) {
@@ -474,23 +669,30 @@ const Unilitix = {
       if (config?.installJsCrashHandler !== false) {
         setupUnilitixCrashHandler({
           trackUnhandledRejections: config?.trackUnhandledRejections,
+          rejectionTracker: config?.rejectionTracker,
         });
       }
       // Both native layers take the initial consent (pending included);
       // a decision persisted on an earlier launch wins over it.
       await m.init({ ...buildInitOptions(apiKey, config), consent: _consent });
-      _initialized = true;
+      _sessionTimeoutMs = (config?.sessionTimeoutSeconds ?? 1800) * 1000;
+      forgetScreen();
+      await loadBuildInfo(m);
+      refreshSessionId(m);
+      watchAppState();
+      // Replay in call order; calls made meanwhile wait for the replay.
       const queued = _preInit.splice(0, _preInit.length);
       for (const fn of queued) {
         await fn();
       }
+      _initialized = true;
       if (config?.debug) {
         console.log('[Unilitix] ✅ SDK initialized');
         const hint = setTimeout(() => {
           if (!_screenEventReceived) {
             console.warn(
-              '[Unilitix] ⚠️ No screen events detected. Did you wire ' +
-                'Unilitix.screen() to NavigationContainer.onStateChange?'
+              '[Unilitix] ⚠️ No screen events detected. Did you add ' +
+                'useUnilitixNavigationTracking(navigationRef)?'
             );
           }
         }, 5000);
@@ -520,14 +722,13 @@ const Unilitix = {
    * ```
    */
   track(event: string, properties?: Record<string, unknown>): Promise<void> {
-    return safely('track', () =>
-      whenReady('track', (m) =>
-        m.track({
-          event: str(event),
-          properties: sanitizeProperties(properties),
-        })
-      )
-    );
+    return safely('track', () => {
+      const payload = {
+        event: str(event),
+        properties: sanitizeProperties(properties),
+      };
+      return whenReady('track', (m) => m.track(payload));
+    });
   },
 
   /**
@@ -539,15 +740,19 @@ const Unilitix = {
    * ```
    */
   identify(userId: string, traits?: Record<string, unknown>): Promise<void> {
-    return safely('identify', () =>
-      whenReady('identify', (m) =>
-        m.identify({ userId: str(userId), traits: sanitizeProperties(traits) })
-      )
-    );
+    return safely('identify', () => {
+      const payload = {
+        userId: str(userId),
+        traits: sanitizeProperties(traits),
+      };
+      return whenReady('identify', (m) => m.identify(payload));
+    });
   },
 
   /**
-   * Track a screen view manually.
+   * Track a screen view. Sends route names, never params. A screen equal to
+   * the session's current screen is dropped (contract rule), so calling it
+   * from several places is harmless.
    *
    * @example
    * ```ts
@@ -556,14 +761,21 @@ const Unilitix = {
    */
   screen(screenName: string): Promise<void> {
     _screenEventReceived = true;
-    return safely('screen', () =>
-      whenReady('screen', (m) => m.screen({ screenName: str(screenName) }))
-    );
+    return safely('screen', () => {
+      const name = str(screenName);
+      return whenReady('screen', (m) => {
+        if (name === _lastScreen) return undefined;
+        _lastScreen = name;
+        return m.screen({ screenName: name });
+      });
+    });
   },
 
   /**
    * Report an error you caught yourself as a non-fatal `EXCEPTION` (or a
-   * `CRASH` with `fatal: true`), with the current breadcrumb trail.
+   * `CRASH` with `fatal: true`), with the current breadcrumb trail, the
+   * contract fingerprint and the source-map ids (`jsBundleId`, `release`,
+   * `dist`).
    *
    * @example
    * ```ts
@@ -576,13 +788,21 @@ const Unilitix = {
   ): Promise<void> {
     return safely('captureException', () => {
       const err = toError(error);
-      const report = {
-        type: str(err.name || 'Error'),
-        message: String(err.message ?? ''),
-        stack: String(err.stack ?? ''),
-        fatal: options?.fatal === true,
-      };
-      return whenReady('captureException', (m) => m.recordException(report));
+      const type = str(err.name || 'Error');
+      const message = String(err.message ?? '');
+      const stack = String(err.stack ?? '');
+      const fp = fingerprint(type, stack);
+      const fatal = options?.fatal === true;
+      return whenReady('captureException', (m) =>
+        m.recordException({
+          type,
+          message,
+          stack,
+          fatal,
+          ...(fp ? { fingerprint: fp } : {}),
+          metadata: jsErrorMetadata(),
+        })
+      );
     });
   },
 
@@ -592,21 +812,28 @@ const Unilitix = {
    * personal data.
    */
   addBreadcrumb(message: string, category = 'custom'): Promise<void> {
-    return safely('addBreadcrumb', () =>
-      whenReady('addBreadcrumb', (m) =>
-        m.addBreadcrumb({ message: str(message), category: str(category) })
-      )
-    );
+    return safely('addBreadcrumb', () => {
+      const payload = { message: str(message), category: str(category) };
+      return whenReady('addBreadcrumb', (m) => m.addBreadcrumb(payload));
+    });
   },
 
   /** Start a new session manually. */
   startSession(): Promise<void> {
-    return whenReady('startSession', (m) => m.startSession({}));
+    return whenReady('startSession', (m) => {
+      forgetScreen();
+      const done = m.startSession({});
+      refreshSessionId(m);
+      return done;
+    });
   },
 
   /** End the current session manually. */
   endSession(): Promise<void> {
-    return whenReady('endSession', (m) => m.endSession({}));
+    return whenReady('endSession', (m) => {
+      forgetScreen();
+      return m.endSession({});
+    });
   },
 
   /** Flush all queued events immediately. */
@@ -640,14 +867,26 @@ const Unilitix = {
     return Unilitix.setConsent('granted');
   },
 
-  /** Reset user identity. Call on logout. */
+  /**
+   * Reset user identity and start a new session. Call on logout.
+   */
   reset(): Promise<void> {
-    return whenReady('reset', (m) => m.reset({}));
+    return whenReady('reset', (m) => {
+      forgetScreen();
+      const done = m.reset({});
+      refreshSessionId(m);
+      return done;
+    });
   },
 
   /** @internal — exposed for testing only */
   get _screenEventReceived() {
     return _screenEventReceived;
+  },
+
+  /** @internal — exposed for testing only */
+  _onAppStateChange(state: string) {
+    onAppStateChange(state);
   },
 
   /** @internal — exposed for testing only */
@@ -661,8 +900,25 @@ const Unilitix = {
     _screenEventReceived = false;
     _crashHandlerInstalled = false;
     _preInit.length = 0;
+    _waitingForInit = 0;
+    _lastScreen = null;
+    _screenSessionId = null;
+    _sessionTimeoutMs = 1800 * 1000;
+    _backgroundedAt = null;
+    try {
+      _appStateSubscription?.remove();
+    } catch {
+      // ignore
+    }
+    _appStateSubscription = null;
+    _configuredErrorInfo = {};
+    _buildInfo = {};
   },
 };
+
+setScreenSink((name) => {
+  Unilitix.screen(name).catch(() => undefined);
+});
 
 function toError(e: unknown): Error {
   if (e instanceof Error) return e;
@@ -689,36 +945,6 @@ function safeStringify(v: unknown): string {
   }
 }
 
-/**
- * Creates a React Navigation state change listener that automatically
- * tracks screen changes with Unilitix.
- *
- * Usage:
- * ```tsx
- * <NavigationContainer onStateChange={createUnilitixNavigationListener()}>
- * ```
- */
-export function createUnilitixNavigationListener() {
-  return (state: any) => {
-    try {
-      if (!state) return;
-      const route = getActiveRoute(state, 0);
-      if (typeof route?.name === 'string') {
-        Unilitix.screen(route.name).catch(() => undefined);
-      }
-    } catch (e) {
-      warn('navigation listener', e);
-    }
-  };
-}
-
-function getActiveRoute(state: any, depth: number): any {
-  if (!state || !Array.isArray(state.routes) || depth > 32) return null;
-  const route = state.routes[state.index ?? state.routes.length - 1];
-  if (route?.state) return getActiveRoute(route.state, depth + 1);
-  return route;
-}
-
 /** Upper bound on how long a fatal error waits for its report to persist. */
 const FATAL_FLUSH_BUDGET_MS = SdkContract.fatalFlushBudgetMs;
 
@@ -726,6 +952,8 @@ const FATAL_FLUSH_BUDGET_MS = SdkContract.fatalFlushBudgetMs;
 export interface UnilitixCrashHandlerOptions {
   /** See {@link UnilitixConfig.trackUnhandledRejections}. @default true */
   trackUnhandledRejections?: boolean;
+  /** See {@link UnilitixConfig.rejectionTracker}. */
+  rejectionTracker?: UnilitixRejectionTracker;
 }
 
 /**
@@ -737,7 +965,8 @@ export interface UnilitixCrashHandlerOptions {
  *   the report is persisted (bounded to 2 s) before the previous handler —
  *   which usually ends the process — runs.
  * - Unhandled promise rejections become non-fatal `EXCEPTION`s (Hermes;
- *   turn off with `trackUnhandledRejections: false`).
+ *   turn off with `trackUnhandledRejections: false`). Other trackers are
+ *   chained, see {@link UnilitixConfig.trackUnhandledRejections}.
  *
  * Does not replace React Native's default error handler — chains to it,
  * always, with the original `isFatal`, even if reporting fails.
@@ -753,7 +982,7 @@ export function setupUnilitixCrashHandler(
     warn('installing the JS error handler', e);
   }
   if (options?.trackUnhandledRejections !== false) {
-    installRejectionTracking();
+    installRejectionTracking(options?.rejectionTracker);
   }
 }
 
@@ -797,21 +1026,38 @@ function installGlobalHandler() {
   });
 }
 
+function callSafely(fn: (() => void) | undefined) {
+  if (!fn) return;
+  try {
+    fn();
+  } catch {
+    // Another tracker's failure must not stop ours (or the app).
+  }
+}
+
 /**
  * Hermes (the default engine since React Native 0.70) exposes
  * `HermesInternal.enablePromiseRejectionTracker`; only unhandled rejections
- * are reported, as non-fatal exceptions. Hermes keeps one tracker and has no
- * getter for the current one, so this replaces React Native's (which only
- * warns in development — kept here: the same warning is logged in
- * `__DEV__`). On JSC there is no tracker to hook without a dependency on the
- * `promise` polyfill internals, so rejections there are not reported —
+ * are reported, as non-fatal exceptions. Hermes keeps one tracker and has
+ * no getter for the current one, so:
+ *
+ * - a tracker passed as [previous] (installed before init) is chained;
+ * - `enablePromiseRejectionTracker` is wrapped so a tracker installed
+ *   after this one is chained too instead of silently replacing it;
+ * - React Native's own tracker only warns in development: the same warning
+ *   is logged in `__DEV__`.
+ *
+ * On JSC there is no tracker to hook without a dependency on the `promise`
+ * polyfill internals, so rejections there are not reported —
  * `captureException` in your own `.catch` covers it.
  */
-function installRejectionTracking() {
+function installRejectionTracking(previous?: UnilitixRejectionTracker) {
   try {
     const hermes = (globalThis as any).HermesInternal;
-    if (!hermes?.enablePromiseRejectionTracker) return;
-    hermes.enablePromiseRejectionTracker({
+    const enable = hermes?.enablePromiseRejectionTracker;
+    if (typeof enable !== 'function') return;
+    const chained: UnilitixRejectionTracker[] = previous ? [previous] : [];
+    enable.call(hermes, {
       allRejections: true,
       onUnhandled: (id: number, reason: unknown) => {
         if (DEV) {
@@ -827,9 +1073,21 @@ function installRejectionTracking() {
         Unilitix.captureException(reason, { fatal: false }).catch(
           () => undefined
         );
+        for (const t of chained) callSafely(() => t.onUnhandled?.(id, reason));
       },
-      onHandled: () => undefined,
+      onHandled: (id: number) => {
+        for (const t of chained) callSafely(() => t.onHandled?.(id));
+      },
     });
+    try {
+      hermes.enablePromiseRejectionTracker = (
+        options?: UnilitixRejectionTracker
+      ) => {
+        if (options && typeof options === 'object') chained.push(options);
+      };
+    } catch {
+      // A frozen HermesInternal: later trackers replace ours, as before.
+    }
   } catch {
     // Older Hermes without the tracker: nothing to install.
   }
