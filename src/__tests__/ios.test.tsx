@@ -102,4 +102,25 @@ describe('iOS (UnilitixCore)', () => {
     const m = swift.match(/packageVersion = "([^"]+)"/);
     expect(m?.[1]).toBe(pkg.version);
   });
+
+  it('Android reports the package.json version as its wrapper version', () => {
+    const root = join(__dirname, '..', '..');
+    const gradle = readFileSync(join(root, 'android', 'build.gradle'), 'utf8');
+    expect(gradle).toMatch(/file\("\.\.\/package\.json"\)/);
+    expect(gradle).toMatch(/buildConfigField "String", "PACKAGE_VERSION"/);
+    const kt = readFileSync(
+      join(root, 'android/src/main/java/com/unilitix/UnilitixModule.kt'),
+      'utf8'
+    );
+    expect(kt).toMatch(
+      /Unilitix\.setWrapper\(WRAPPER_NAME, BuildConfig\.PACKAGE_VERSION\)/
+    );
+    expect(kt).toMatch(/WRAPPER_NAME = "react-native"/);
+  });
+
+  it('the podspec takes its version from package.json', () => {
+    const root = join(__dirname, '..', '..');
+    const podspec = readFileSync(join(root, 'Unilitix.podspec'), 'utf8');
+    expect(podspec).toMatch(/s\.version\s+= package\["version"\]/);
+  });
 });

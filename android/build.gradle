@@ -37,7 +37,21 @@ allprojects {
 apply plugin: "com.android.library"
 apply plugin: "kotlin-android"
 
+// Runs codegen for src/NativeUnilitix.ts and the UnilitixMaskView /
+// UnilitixUnmaskView components (package.json "codegenConfig").
 apply plugin: "com.facebook.react"
+
+def isNewArchitectureEnabled() {
+  return rootProject.hasProperty("newArchEnabled") &&
+    rootProject.getProperty("newArchEnabled") == "true"
+}
+
+// The version the SDK reports as its wrapper (Unilitix.setWrapper):
+// package.json is the single source of truth.
+def unilitixPackageVersion() {
+  def pkg = new groovy.json.JsonSlurper().parse(file("../package.json"))
+  return pkg.version
+}
 
 android {
   namespace "com.unilitix"
@@ -46,7 +60,25 @@ android {
 
   defaultConfig {
     minSdkVersion getExtOrDefault("minSdkVersion")
+    consumerProguardFiles "consumer-rules.pro"
     targetSdkVersion getExtOrDefault("targetSdkVersion")
+    buildConfigField "String", "PACKAGE_VERSION", "\"${unilitixPackageVersion()}\""
+    buildConfigField "boolean", "IS_NEW_ARCHITECTURE_ENABLED", isNewArchitectureEnabled().toString()
+  }
+
+  sourceSets {
+    main {
+      if (isNewArchitectureEnabled()) {
+        // UnilitixSpec = the codegen'd NativeUnilitixSpec (TurboModule).
+        java.srcDirs += [
+          "src/newarch",
+          "${project.buildDir}/generated/source/codegen/java"
+        ]
+      } else {
+        // UnilitixSpec = a bridge module with the same methods.
+        java.srcDirs += ["src/oldarch"]
+      }
+    }
   }
 
   buildFeatures {
@@ -71,5 +103,5 @@ android {
 
 dependencies {
   implementation "com.facebook.react:react-android"
-  implementation 'com.unilitix:unilitix-android:1.10.2'
+  implementation 'com.unilitix:unilitix-android:1.11.2'
 }

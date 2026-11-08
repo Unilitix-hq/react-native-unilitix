@@ -1,14 +1,23 @@
 package com.unilitix
 
 import android.app.Application
+import android.content.pm.PackageManager
+import android.os.Build
+import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
-import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.ReadableMap
 import com.facebook.react.bridge.UiThreadUtil
+import com.facebook.react.module.annotations.ReactModule
 import io.unilitix.sdk.Unilitix
 import io.unilitix.sdk.UnilitixConsent
+
+/** JS name of the module (src/NativeUnilitix.ts). */
+internal const val UNILITIX_MODULE_NAME = "Unilitix"
+
+/** Wrapper name reported with every session (`Unilitix.setWrapper`). */
+internal const val WRAPPER_NAME = "react-native"
 
 /**
  * `ReadableMap.toHashMap()` returns `HashMap<String, Any?>` since React Native
@@ -24,11 +33,26 @@ internal fun ReadableMap?.toNonNullMap(): Map<String, Any> {
   return out
 }
 
+/** `metadata` of a JS error: string values only (jsBundleId, release, dist, platform). */
+internal fun ReadableMap?.toStringMap(): Map<String, Any?>? {
+  val source = this?.toHashMap() ?: return null
+  val out = LinkedHashMap<String, Any?>(source.size)
+  for ((key, value) in source) {
+    if (value != null) out[key] = value.toString()
+  }
+  return out
+}
+
+/**
+ * The Unilitix module: a TurboModule on the New Architecture (UnilitixSpec =
+ * the codegen'd NativeUnilitixSpec, src/newarch) and a bridge module on the
+ * legacy architecture (src/oldarch). Every method takes one options map and
+ * a promise (src/NativeUnilitix.ts).
+ */
+@ReactModule(name = UNILITIX_MODULE_NAME)
 class UnilitixModule(
   private val reactContext: ReactApplicationContext
-) : ReactContextBaseJavaModule(reactContext) {
-
-  override fun getName(): String = "Unilitix"
+) : UnilitixSpec(reactContext) {
 
   /**
    * React Native calls @ReactMethods on its native-modules thread, but the SDK
@@ -37,7 +61,7 @@ class UnilitixModule(
    * Activity that already exists (JS starts after MainActivity is created).
    */
   @ReactMethod
-  fun init(options: ReadableMap, promise: Promise) {
+  override fun init(options: ReadableMap, promise: Promise) {
     UiThreadUtil.runOnUiThread { initOnMainThread(options, promise) }
   }
 
@@ -52,6 +76,9 @@ class UnilitixModule(
       val consent = UnilitixConsent.fromValue(options.getString("consent"))
         ?: UnilitixConsent.GRANTED
 
+      // Sessions report "react-native" and this package's version (1.7.x
+      // reported no wrapper version on Android).
+      Unilitix.setWrapper(WRAPPER_NAME, BuildConfig.PACKAGE_VERSION)
       Unilitix.init(app, apiKey, consent) {
         options.getString("apiUrl")
           ?.let { apiUrl = it }
@@ -145,7 +172,7 @@ class UnilitixModule(
   }
 
   @ReactMethod
-  fun track(options: ReadableMap, promise: Promise) {
+  override fun track(options: ReadableMap, promise: Promise) {
     try {
       val event = options.getString("event")
         ?: return promise.reject("MISSING_EVENT",
@@ -159,7 +186,7 @@ class UnilitixModule(
   }
 
   @ReactMethod
-  fun identify(options: ReadableMap, promise: Promise) {
+  override fun identify(options: ReadableMap, promise: Promise) {
     try {
       val userId = options.getString("userId")
         ?: return promise.reject("MISSING_USER_ID",
@@ -173,7 +200,7 @@ class UnilitixModule(
   }
 
   @ReactMethod
-  fun screen(options: ReadableMap, promise: Promise) {
+  override fun screen(options: ReadableMap, promise: Promise) {
     try {
       val name = options.getString("screenName")
         ?: return promise.reject("MISSING_SCREEN",
@@ -187,20 +214,28 @@ class UnilitixModule(
 
   /**
    * Reports an error the JS side caught (uncaught JS error, unhandled
-   * promise rejection, or `Unilitix.captureException`). `fatal` reports a
-   * CRASH that the library persists before this method resolves, so the JS
-   * handler can safely chain to React Native's default (process-ending)
-   * handler afterwards.
+   * promise rejection, or `Unilitix.captureException`) through the core's
+   * external-error API with platform "js": `fingerprint` is the contract
+   * fingerprint computed in JS, `metadata` carries `jsBundleId`, `release`
+   * and `dist` for source-map symbolication. `fatal` reports a CRASH that
+   * the library persists before this method resolves, so the JS handler can
+   * safely chain to React Native's default (process-ending) handler.
    */
   @ReactMethod
-  fun recordException(options: ReadableMap, promise: Promise) {
+  override fun recordException(options: ReadableMap, promise: Promise) {
     try {
       val type = options.getString("type") ?: "Error"
       val message = options.getString("message") ?: ""
-      val stack = options.getString("stack") ?: ""
+      val stack = if (options.hasKey("stack")) options.getString("stack") else null
       val fatal = options.hasKey("fatal") && options.getBoolean("fatal")
+      val fingerprint =
+        if (options.hasKey("fingerprint")) options.getString("fingerprint") else null
+      val metadata =
+        if (options.hasKey("metadata")) options.getMap("metadata").toStringMap() else null
       if (fatal) lastJsFatalAt = System.currentTimeMillis()
-      Unilitix.recordException(type, message, stack, fatal, "js")
+      Unilitix.recordExternalError(
+        type, message, stack, fatal, JS_PLATFORM, fingerprint, metadata
+      )
       promise.resolve(null)
     } catch (e: Throwable) {
       promise.reject("EXCEPTION_ERROR", e.message, e)
@@ -208,7 +243,7 @@ class UnilitixModule(
   }
 
   @ReactMethod
-  fun addBreadcrumb(options: ReadableMap, promise: Promise) {
+  override fun addBreadcrumb(options: ReadableMap, promise: Promise) {
     try {
       val message = options.getString("message")
         ?: return promise.reject("MISSING_MESSAGE", "message is required")
@@ -221,7 +256,7 @@ class UnilitixModule(
   }
 
   @ReactMethod
-  fun startSession(options: ReadableMap?, promise: Promise) {
+  override fun startSession(options: ReadableMap, promise: Promise) {
     try { Unilitix.startSession(); promise.resolve(null) }
     catch (e: Throwable) {
       promise.reject("SESSION_ERROR", e.message, e)
@@ -229,7 +264,7 @@ class UnilitixModule(
   }
 
   @ReactMethod
-  fun endSession(options: ReadableMap?, promise: Promise) {
+  override fun endSession(options: ReadableMap, promise: Promise) {
     try { Unilitix.endSession(); promise.resolve(null) }
     catch (e: Throwable) {
       promise.reject("SESSION_ERROR", e.message, e)
@@ -237,7 +272,7 @@ class UnilitixModule(
   }
 
   @ReactMethod
-  fun flush(options: ReadableMap?, promise: Promise) {
+  override fun flush(options: ReadableMap, promise: Promise) {
     try { Unilitix.flush(); promise.resolve(null) }
     catch (e: Throwable) {
       promise.reject("FLUSH_ERROR", e.message, e)
@@ -246,7 +281,7 @@ class UnilitixModule(
 
   /** `{ value: 'granted' | 'pending' | 'denied' }`, persisted by the library. */
   @ReactMethod
-  fun setConsent(options: ReadableMap, promise: Promise) {
+  override fun setConsent(options: ReadableMap, promise: Promise) {
     try {
       val consent = UnilitixConsent.fromValue(options.getString("value"))
         ?: return promise.reject("INVALID_CONSENT",
@@ -259,7 +294,7 @@ class UnilitixModule(
   }
 
   @ReactMethod
-  fun optOut(options: ReadableMap?, promise: Promise) {
+  override fun optOut(options: ReadableMap, promise: Promise) {
     try { Unilitix.optOut(); promise.resolve(null) }
     catch (e: Throwable) {
       promise.reject("OPT_ERROR", e.message, e)
@@ -267,7 +302,7 @@ class UnilitixModule(
   }
 
   @ReactMethod
-  fun optIn(options: ReadableMap?, promise: Promise) {
+  override fun optIn(options: ReadableMap, promise: Promise) {
     try { Unilitix.optIn(); promise.resolve(null) }
     catch (e: Throwable) {
       promise.reject("OPT_ERROR", e.message, e)
@@ -275,14 +310,52 @@ class UnilitixModule(
   }
 
   @ReactMethod
-  fun reset(options: ReadableMap?, promise: Promise) {
+  override fun reset(options: ReadableMap, promise: Promise) {
     try { Unilitix.reset(); promise.resolve(null) }
     catch (e: Throwable) {
       promise.reject("RESET_ERROR", e.message, e)
     }
   }
 
+  /** The core's current session id ('' before init or without a session). */
+  @ReactMethod
+  override fun currentSessionId(options: ReadableMap, promise: Promise) {
+    try { promise.resolve(Unilitix.currentSessionId() ?: "") }
+    catch (e: Throwable) {
+      promise.reject("SESSION_ERROR", e.message, e)
+    }
+  }
+
+  /** `{appVersion, buildNumber}`: release and dist of JS errors. */
+  @ReactMethod
+  override fun getBuildInfo(options: ReadableMap, promise: Promise) {
+    try {
+      val ctx = reactContext.applicationContext
+      val info = if (Build.VERSION.SDK_INT >= 33) {
+        ctx.packageManager.getPackageInfo(ctx.packageName, PackageManager.PackageInfoFlags.of(0))
+      } else {
+        @Suppress("DEPRECATION")
+        ctx.packageManager.getPackageInfo(ctx.packageName, 0)
+      }
+      val build = if (Build.VERSION.SDK_INT >= 28) {
+        info.longVersionCode
+      } else {
+        @Suppress("DEPRECATION")
+        info.versionCode.toLong()
+      }
+      val map = Arguments.createMap()
+      map.putString("appVersion", info.versionName ?: "")
+      map.putString("buildNumber", build.toString())
+      promise.resolve(map)
+    } catch (e: Throwable) {
+      promise.reject("BUILD_INFO_ERROR", e.message, e)
+    }
+  }
+
   companion object {
+    /** Platform of errors raised in JS (`recordExternalError`). */
+    private const val JS_PLATFORM = "js"
+
     private const val JS_EXCEPTION_CLASS = "com.facebook.react.common.JavascriptException"
     private const val JS_FATAL_WINDOW_MS = 15_000L
 

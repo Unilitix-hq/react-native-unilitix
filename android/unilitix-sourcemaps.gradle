@@ -1,0 +1,76 @@
+// Uploads each release variant's JS source map to Unilitix after React
+// Native bundles it. Apply it in android/app/build.gradle, after
+// `apply plugin: "com.facebook.react"`:
+//
+//   apply from: new File(["node", "--print", "require.resolve('react-native-unilitix/package.json')"]
+//       .execute(null, rootDir).text.trim(), "../android/unilitix-sourcemaps.gradle")
+//
+// (The Expo config plugin adds this line for you.) For every variant that
+// has a createBundle<Variant>JsAndAssets task, an
+// uploadUnilitixSourcemaps<Variant> task runs after it with the bundle, the
+// final source map (React Native's Gradle plugin already composes the Metro
+// and Hermes maps) and the variant's versionName / versionCode as release /
+// dist. Debuggable variants are not bundled, so nothing is uploaded for them.
+//
+// Environment: UNILITIX_API_KEY (required to upload; never printed),
+// UNILITIX_CLI (default unilitix-cli on PATH), UNILITIX_SOURCEMAPS_DISABLED=1
+// to skip, UNILITIX_SOURCEMAPS_STRICT=1 to fail the build when the upload
+// fails (by default a failure is a warning).
+
+def unilitixPackageDir = buildscript.sourceFile.parentFile.parentFile
+def unilitixScript = new File(unilitixPackageDir, "scripts/unilitix-sourcemaps.js")
+
+def unilitixNode = {
+  def react = project.extensions.findByName("react")
+  try {
+    def cmd = react?.nodeExecutableAndArgs?.getOrNull()
+    if (cmd) return cmd
+  } catch (ignored) {
+  }
+  return ["node"]
+}
+
+def unilitixBundleOutputs = { task, String variantName ->
+  // BundleHermesCTask (React Native Gradle plugin): the final map is always
+  // <jsSourceMapsDir>/<bundleAssetName>.map.
+  def assetName = "index.android.bundle"
+  def bundleDir = new File(project.buildDir, "generated/assets/createBundle${variantName.capitalize()}JsAndAssets")
+  def mapsDir = new File(project.buildDir, "generated/sourcemaps/react/${variantName}")
+  try { assetName = task.bundleAssetName.get() } catch (ignored) {}
+  try { bundleDir = task.jsBundleDir.get().asFile } catch (ignored) {}
+  try { mapsDir = task.jsSourceMapsDir.get().asFile } catch (ignored) {}
+  return [new File(bundleDir, assetName), new File(mapsDir, "${assetName}.map")]
+}
+
+androidComponents {
+  onVariants(selector().all()) { variant ->
+    def cap = variant.name.capitalize()
+    def output = variant.outputs.find { true }
+    def versionName = output?.versionName
+    def versionCode = output?.versionCode
+    def bundleTaskName = "createBundle${cap}JsAndAssets"
+
+    def upload = project.tasks.register("uploadUnilitixSourcemaps${cap}", Exec) {
+      group = "unilitix"
+      description = "Uploads the ${variant.name} JS source map to Unilitix."
+      onlyIf { System.getenv("UNILITIX_SOURCEMAPS_DISABLED") != "1" }
+    }
+
+    project.tasks.configureEach { t ->
+      if (t.name != bundleTaskName) return
+      t.finalizedBy(upload)
+      upload.configure {
+        def (bundle, map) = unilitixBundleOutputs(t, variant.name)
+        onlyIf { bundle.exists() }
+        commandLine(unilitixNode() + [
+          unilitixScript.absolutePath, "upload",
+          "--platform", "android",
+          "--bundle", bundle.absolutePath,
+          "--sourcemap", map.absolutePath,
+          "--app-version", versionName?.getOrElse("") ?: "",
+          "--build", String.valueOf(versionCode?.getOrElse(0) ?: 0),
+        ])
+      }
+    }
+  }
+}

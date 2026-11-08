@@ -27,5 +27,12 @@
     "target": "ESNext",
     "verbatimModuleSyntax": true
   },
-  "exclude": ["node_modules", "**/__tests__/**", "**/*.test.*", "**/__mocks__/**"]
+  "exclude": [
+    "node_modules",
+    "**/__tests__/**",
+    "**/*.test.*",
+    "**/__mocks__/**",
+    "src/generated/behaviourFixtures.ts",
+    "plugin"
+  ]
 }

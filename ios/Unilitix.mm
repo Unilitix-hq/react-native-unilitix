@@ -10,8 +10,13 @@
 #endif
 
 // Every method takes one options dictionary and a promise — the same shape
-// the JS side sends to Android. Calls never reject: analytics must not throw
-// into the app, and the core queues work on its own serial queue.
+// the JS side sends to Android (src/NativeUnilitix.ts). Calls never reject:
+// analytics must not throw into the app, and the core queues work on its
+// own serial queue.
+//
+// New Architecture: the class conforms to the codegen'd NativeUnilitixSpec
+// and returns its JSI binding from getTurboModule:. Legacy architecture: the
+// same methods are exported to the bridge with RCT_EXPORT_METHOD.
 
 @implementation Unilitix
 
@@ -125,5 +130,29 @@ RCT_EXPORT_METHOD(reset:(NSDictionary *)options
   [UnilitixBridge reset];
   resolve(nil);
 }
+
+RCT_EXPORT_METHOD(currentSessionId:(NSDictionary *)options
+                  resolve:(RCTPromiseResolveBlock)resolve
+                  reject:(RCTPromiseRejectBlock)reject)
+{
+  [UnilitixBridge currentSessionId:^(NSString *sessionId) {
+    resolve(sessionId);
+  }];
+}
+
+RCT_EXPORT_METHOD(getBuildInfo:(NSDictionary *)options
+                  resolve:(RCTPromiseResolveBlock)resolve
+                  reject:(RCTPromiseRejectBlock)reject)
+{
+  resolve([UnilitixBridge buildInfo]);
+}
+
+#ifdef RCT_NEW_ARCH_ENABLED
+- (std::shared_ptr<facebook::react::TurboModule>)getTurboModule:
+    (const facebook::react::ObjCTurboModule::InitParams &)params
+{
+  return std::make_shared<facebook::react::NativeUnilitixSpecJSI>(params);
+}
+#endif
 
 @end

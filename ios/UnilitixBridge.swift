@@ -11,7 +11,12 @@ public final class UnilitixBridge: NSObject {
 
     /// This package's version; must match package.json (checked by
     /// src/__tests__/ios.test.tsx).
-    static let packageVersion = "1.7.3"
+    static let packageVersion = "2.0.0"
+
+    /// Wrapper name reported with every session.
+    static let wrapperName = "react-native"
+    /// Platform of errors raised in JS (`recordExternalError`).
+    static let jsPlatform = "js"
 
     private static let lock = NSLock()
     private static var engine: Engine?
@@ -22,8 +27,10 @@ public final class UnilitixBridge: NSObject {
         defer { lock.unlock() }
         guard engine == nil, let apiKey = options["apiKey"] as? String, !apiKey.isEmpty else { return }
 
-        UnilitixVersion.reported = packageVersion
-        UnilitixVersion.userAgentPlatform = "ReactNative"
+        // Sessions and the User-Agent report "react-native" and this
+        // package's version (UnilitixCore 0.8.0 wrapper API; it replaces
+        // setting UnilitixVersion.reported / userAgentPlatform by hand).
+        Engine.setWrapper(name: wrapperName, version: packageVersion)
 
         var config = UnilitixConfig()
         if let v = options["apiUrl"] as? String, !v.isEmpty { config.apiUrl = v }
@@ -139,19 +146,47 @@ public final class UnilitixBridge: NSObject {
         run { $0.screenView(name) }
     }
 
+    /// A JS error: `{type, message, stack, fatal, fingerprint?, metadata}`.
+    /// `fingerprint` is the contract fingerprint computed in JS; `metadata`
+    /// carries `jsBundleId`, `release`, `dist` (source maps) and `platform`.
     @objc public static func recordException(_ options: NSDictionary) {
         let type = options["type"] as? String ?? "Error"
         let message = options["message"] as? String ?? ""
         let stack = options["stack"] as? String
         let fatal = options["fatal"] as? Bool ?? false
+        let fingerprint = options["fingerprint"] as? String
+        var metadata: [String: Any] = [:]
+        if let m = options["metadata"] as? [String: Any] {
+            for (k, v) in m { metadata[k] = "\(v)" }
+        }
         guard let e = current() else { return }
+        let record = {
+            e.recordExternalError(type: type, message: message, stackTrace: stack, fatal: fatal,
+                                  platform: jsPlatform, fingerprint: fingerprint,
+                                  metadata: metadata.isEmpty ? nil : metadata)
+        }
         if fatal {
             // React Native ends the process right after a fatal JS error, so
             // persist synchronously (bounded) instead of going through the queue.
-            e.queue.sync { e.recordError(type: type, message: message, stack: stack, fatal: true, platform: "js") }
+            e.queue.sync(execute: record)
         } else {
-            e.queue.async { e.recordError(type: type, message: message, stack: stack, fatal: false, platform: "js") }
+            e.queue.async(execute: record)
         }
+    }
+
+    /// The engine's current session id, or "" (no engine or no session).
+    @objc public static func currentSessionId(_ completion: @escaping (String) -> Void) {
+        guard let e = current() else { return completion("") }
+        e.queue.async { completion(e.currentSessionId ?? "") }
+    }
+
+    /// `{appVersion, buildNumber}`: release and dist of JS errors.
+    @objc public static func buildInfo() -> NSDictionary {
+        let info = Bundle.main.infoDictionary ?? [:]
+        return [
+            "appVersion": info["CFBundleShortVersionString"] as? String ?? "",
+            "buildNumber": info["CFBundleVersion"] as? String ?? "",
+        ]
     }
 
     @objc public static func addBreadcrumb(_ options: NSDictionary) {

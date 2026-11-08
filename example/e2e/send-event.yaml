@@ -1,0 +1,15 @@
+# Maestro flow for the example app (CI job e2e-android): boots the app
+# against the fake ingest server, sends one event and waits for the UI to
+# confirm the flush. example/e2e/assert-event.mjs then checks the server.
+appId: unilitix.example
+---
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible: "Ready"
+    timeout: 180000
+- tapOn:
+    id: "send"
+- extendedWaitUntil:
+    visible: "Event sent"
+    timeout: 30000
